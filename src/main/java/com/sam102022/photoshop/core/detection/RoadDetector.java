@@ -24,16 +24,17 @@ public class RoadDetector {
         int h = mapImage.getHeight();
         BinaryMask rawBarrier = new BinaryMask(w, h);
 
-        int[][] luminance = new int[w][h];
+        int[] luminance = new int[w * h];
 
         for (int y = 0; y < h; y++) {
+            int rowOffset = y * w;
             for (int x = 0; x < w; x++) {
                 int rgb = mapImage.getRGB(x, y);
                 int r = (rgb >> 16) & 0xFF;
                 int g = (rgb >> 8) & 0xFF;
                 int b = rgb & 0xFF;
 
-                luminance[x][y] = (int) (0.299 * r + 0.587 * g + 0.114 * b);
+                luminance[rowOffset + x] = (int) (0.299 * r + 0.587 * g + 0.114 * b);
 
                 if (isRoadColor(r, g, b)) {
                     rawBarrier.set(x, y, true);
@@ -44,23 +45,28 @@ public class RoadDetector {
         // Détection de contours Sobel pour capturer les délimitations nettes des routes blanches
         float sensitivity = config.roadSensitivity();
         int sobelThreshold = Math.max(30, (int) (75 / sensitivity));
+        int sobelThresholdSq = sobelThreshold * sobelThreshold;
 
         for (int y = 1; y < h - 1; y++) {
+            int prevRow = (y - 1) * w;
+            int currRow = y * w;
+            int nextRow = (y + 1) * w;
+
             for (int x = 1; x < w - 1; x++) {
                 if (rawBarrier.get(x, y)) {
                     continue;
                 }
 
                 // Gradients Sobel Gx et Gy
-                int gx = (-1 * luminance[x - 1][y - 1]) + (1 * luminance[x + 1][y - 1])
-                        + (-2 * luminance[x - 1][y]) + (2 * luminance[x + 1][y])
-                        + (-1 * luminance[x - 1][y + 1]) + (1 * luminance[x + 1][y + 1]);
+                int gx = -luminance[prevRow + (x - 1)] + luminance[prevRow + (x + 1)]
+                        - 2 * luminance[currRow + (x - 1)] + 2 * luminance[currRow + (x + 1)]
+                        - luminance[nextRow + (x - 1)] + luminance[nextRow + (x + 1)];
 
-                int gy = (-1 * luminance[x - 1][y - 1]) + (-2 * luminance[x][y - 1]) + (-1 * luminance[x + 1][y - 1])
-                        + (1 * luminance[x - 1][y + 1]) + (2 * luminance[x][y + 1]) + (1 * luminance[x + 1][y + 1]);
+                int gy = -luminance[prevRow + (x - 1)] - 2 * luminance[prevRow + x] - luminance[prevRow + (x + 1)]
+                        + luminance[nextRow + (x - 1)] + 2 * luminance[nextRow + x] + luminance[nextRow + (x + 1)];
 
-                int mag = (int) Math.sqrt(gx * gx + gy * gy);
-                if (mag >= sobelThreshold) {
+                int magSq = gx * gx + gy * gy;
+                if (magSq >= sobelThresholdSq) {
                     rawBarrier.set(x, y, true);
                 }
             }
