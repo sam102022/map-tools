@@ -23,6 +23,8 @@ class ImageIoTest {
 
         assertDoesNotThrow(() -> ImageLoader.validateDimensions(img1, img2));
         assertThrows(IllegalArgumentException.class, () -> ImageLoader.validateDimensions(img1, img3));
+        assertThrows(IllegalArgumentException.class, () -> ImageLoader.validateDimensions(null, img2));
+        assertThrows(IllegalArgumentException.class, () -> ImageLoader.validateDimensions(img1, null));
     }
 
     @Test
@@ -55,6 +57,58 @@ class ImageIoTest {
     }
 
     @Test
+    @DisplayName("Lissage des bords (smoothRadius > 0) avec atténuation alpha")
+    void testCreateClippedImageWithSmoothing() {
+        BufferedImage map = new BufferedImage(10, 10, BufferedImage.TYPE_INT_RGB);
+        BinaryMask mask = new BinaryMask(10, 10);
+
+        // Carré 6x6 au centre (de 2 à 7)
+        for (int y = 2; y <= 7; y++) {
+            for (int x = 2; x <= 7; x++) {
+                mask.set(x, y, true);
+            }
+        }
+
+        BufferedImage clipped = ImageExporter.createClippedImage(map, mask, 1);
+
+        // Pixel central (4, 4) situé dans le cœur érodé -> alpha 255
+        int coreAlpha = (clipped.getRGB(4, 4) >> 24) & 0xFF;
+        assertEquals(255, coreAlpha);
+
+        // Pixel de bordure (2, 2) situé sur la marge érodée -> alpha 160
+        int borderAlpha = (clipped.getRGB(2, 2) >> 24) & 0xFF;
+        assertEquals(160, borderAlpha);
+
+        // Pixel extérieur (0, 0) -> alpha 0
+        int outsideAlpha = (clipped.getRGB(0, 0) >> 24) & 0xFF;
+        assertEquals(0, outsideAlpha);
+    }
+
+    @Test
+    @DisplayName("Chargement d'image avec ImageLoader.load et gestion des erreurs")
+    void testImageLoaderCycleAndErrors(@TempDir Path tempDir) throws IOException {
+        Path imagePath = tempDir.resolve("test_image.png");
+        BufferedImage original = new BufferedImage(20, 30, BufferedImage.TYPE_INT_RGB);
+        original.setRGB(10, 15, 0x123456);
+
+        ImageExporter.savePng(original, imagePath);
+
+        // Chargement réussi
+        BufferedImage loaded = ImageLoader.load(imagePath);
+        assertNotNull(loaded);
+        assertEquals(20, loaded.getWidth());
+        assertEquals(30, loaded.getHeight());
+        assertEquals(0x123456, loaded.getRGB(10, 15) & 0x00FFFFFF);
+
+        // Fichier inexistant
+        Path nonexistent = tempDir.resolve("ghost.png");
+        assertThrows(IOException.class, () -> ImageLoader.load(nonexistent));
+
+        // Paramètre null
+        assertThrows(IllegalArgumentException.class, () -> ImageLoader.load(null));
+    }
+
+    @Test
     @DisplayName("Génération du PNG de visualisation du masque binaire")
     void testCreateMaskImageAndExport(@TempDir Path tempDir) throws IOException {
         BinaryMask mask = new BinaryMask(10, 10);
@@ -70,5 +124,20 @@ class ImageIoTest {
         Path maskFile = tempDir.resolve("mask.png");
         ImageExporter.savePng(maskImage, maskFile);
         assertTrue(maskFile.toFile().exists());
+    }
+
+    @Test
+    @DisplayName("Validation des arguments null pour ImageExporter")
+    void testImageExporterValidation() {
+        BinaryMask mask = new BinaryMask(10, 10);
+        BufferedImage img = new BufferedImage(10, 10, BufferedImage.TYPE_INT_RGB);
+        BufferedImage wrongSize = new BufferedImage(15, 10, BufferedImage.TYPE_INT_RGB);
+
+        assertThrows(IllegalArgumentException.class, () -> ImageExporter.createClippedImage(null, mask, 0));
+        assertThrows(IllegalArgumentException.class, () -> ImageExporter.createClippedImage(img, null, 0));
+        assertThrows(IllegalArgumentException.class, () -> ImageExporter.createClippedImage(wrongSize, mask, 0));
+        assertThrows(IllegalArgumentException.class, () -> ImageExporter.createMaskImage(null));
+        assertThrows(IllegalArgumentException.class, () -> ImageExporter.savePng(null, Path.of("test.png")));
+        assertThrows(IllegalArgumentException.class, () -> ImageExporter.savePng(img, null));
     }
 }

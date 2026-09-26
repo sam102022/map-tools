@@ -7,6 +7,7 @@ import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 /**
@@ -85,11 +86,11 @@ public final class ImageExporter {
         if (image == null || outputPath == null) {
             throw new IllegalArgumentException("image et outputPath ne peuvent pas être null.");
         }
-        File file = outputPath.toFile();
-        File parent = file.getParentFile();
-        if (parent != null && !parent.exists()) {
-            parent.mkdirs();
+        Path parent = outputPath.getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
         }
+        File file = outputPath.toFile();
         boolean written = ImageIO.write(image, "PNG", file);
         if (!written) {
             throw new IOException("Impossible d'écrire l'image au format PNG vers : " + outputPath);
