@@ -1,210 +1,71 @@
 package com.sam102022.photoshop.core.segmentation;
 
+import com.sam102022.photoshop.core.geometry.ContourExtractor;
+import com.sam102022.photoshop.core.geometry.ContourSimplifier;
+import com.sam102022.photoshop.core.geometry.PolygonBuilder;
+import com.sam102022.photoshop.core.geometry.RoadSnapper;
 import com.sam102022.photoshop.core.model.BinaryMask;
 import com.sam102022.photoshop.core.model.SnappingConfig;
 
-import java.util.ArrayDeque;
-import java.util.Queue;
+import java.awt.Point;
+import java.util.List;
 
 /**
- * Moteur de recalage : effectue une érosion de graine sur le masque vert puis une propagation
- * géodésique BFS bloquée par les barrières routières et bornée par snapDistance.
+ * Moteur de recalage géométrique : extrait le contour extérieur du masque,
+ * le simplifie, l'aimante sur les candidats routiers proches et reconstruit
+ * le masque polygonal final tout en préservant le noyau intérieur.
  */
 public class RoadSnappingEngine {
+    private final ContourExtractor contourExtractor = new ContourExtractor();
+    private final ContourSimplifier contourSimplifier = new ContourSimplifier();
+    private final RoadSnapper roadSnapper = new RoadSnapper();
+    private final PolygonBuilder polygonBuilder = new PolygonBuilder();
 
-    public BinaryMask snap(BinaryMask roughGreenMask, BinaryMask roadBarrier, SnappingConfig config) {
-        if (roughGreenMask == null || roadBarrier == null || config == null) {
-            throw new IllegalArgumentException("Les arguments du snapping engine ne peuvent pas être null.");
+    public BinaryMask snap(BinaryMask roughGreenMask, BinaryMask roadCandidates, SnappingConfig config) {
+        if (roughGreenMask == null || roadCandidates == null || config == null) {
+            throw new IllegalArgumentException("Les arguments du moteur de recalage ne peuvent pas être null.");
         }
-        if (roughGreenMask.getWidth() != roadBarrier.getWidth() || roughGreenMask.getHeight() != roadBarrier.getHeight()) {
-            throw new IllegalArgumentException("Dimensions incompatibles entre roughGreenMask et roadBarrier.");
+        if (roughGreenMask.getWidth() != roadCandidates.getWidth()
+                || roughGreenMask.getHeight() != roadCandidates.getHeight()) {
+            throw new IllegalArgumentException("Dimensions incompatibles entre le masque et les candidats routiers.");
+        }
+        if (roughGreenMask.countActivePixels() == 0) {
+            return new BinaryMask(roughGreenMask.getWidth(), roughGreenMask.getHeight());
+        }
+        if (roadCandidates.countActivePixels() == 0) {
+            return roughGreenMask.copy();
         }
 
-        int w = roughGreenMask.getWidth();
-        int h = roughGreenMask.getHeight();
-
-        // 1. Extraction du noyau certain (seed) par érosion adaptative
-        BinaryMask seedCandidate = extractReliableSeed(roughGreenMask, config.seedErosionRadius());
-        if (seedCandidate.countActivePixels() == 0) {
-            seedCandidate = roughGreenMask.copy();
+        List<Point> contour = contourExtractor.extractLargestContour(roughGreenMask);
+        if (contour.size() < 3) {
+            return roughGreenMask.copy();
         }
 
-        // Exclure les barrières routières de la graine
-        BinaryMask cleanSeed = new BinaryMask(w, h);
-        for (int y = 0; y < h; y++) {
-            for (int x = 0; x < w; x++) {
-                if (seedCandidate.get(x, y) && !roadBarrier.get(x, y)) {
-                    cleanSeed.set(x, y, true);
-                }
+        // Simplifier les micro-marches d'escalier du contour raster
+        List<Point> simplified = contourSimplifier.simplify(contour, 1.0);
+        if (simplified.size() < 3) {
+            simplified = contour;
+        }
+
+        List<Point> adjustedContour = roadSnapper.snap(simplified, roadCandidates,
+                roughGreenMask.getWidth(), roughGreenMask.getHeight(), config);
+
+        boolean moved = false;
+        for (int i = 0; i < simplified.size(); i++) {
+            if (!simplified.get(i).equals(adjustedContour.get(i))) {
+                moved = true;
+                break;
             }
         }
-
-        // Si la graine érodée est totalement couverte par des routes, se replier sur le masque initial hors routes
-        if (cleanSeed.countActivePixels() == 0) {
-            for (int y = 0; y < h; y++) {
-                for (int x = 0; x < w; x++) {
-                    if (roughGreenMask.get(x, y) && !roadBarrier.get(x, y)) {
-                        cleanSeed.set(x, y, true);
-                    }
-                }
-            }
+        if (!moved) {
+            return roughGreenMask.copy();
         }
 
-        // Si aucun pixel n'est éligible, retourner un masque vide
-        if (cleanSeed.countActivePixels() == 0) {
-            return new BinaryMask(w, h);
-        }
+        BinaryMask rasterized = polygonBuilder.rasterize(
+                roughGreenMask.getWidth(), roughGreenMask.getHeight(), adjustedContour);
 
-        // Ne conserver que la composante connexe principale (la plus grande) pour éliminer les faux germes
-        BinaryMask seed = keepLargestComponent(cleanSeed);
-
-        // 2. Détermination de la zone maximale autorisée (bounding zone)
-        BinaryMask allowedZone = MorphologyOps.dilate(roughGreenMask, config.snapDistance());
-
-        // 3. Propagation BFS contrainte
-        BinaryMask result = new BinaryMask(w, h);
-        boolean[] visited = new boolean[w * h];
-        Queue<Integer> queue = new ArrayDeque<>();
-
-        for (int y = 0; y < h; y++) {
-            for (int x = 0; x < w; x++) {
-                int idx = y * w + x;
-                if (seed.get(x, y)) {
-                    visited[idx] = true;
-                    result.set(x, y, true);
-                    queue.offer(idx);
-                }
-            }
-        }
-
-        int[] dx = {1, -1, 0, 0};
-        int[] dy = {0, 0, 1, -1};
-
-        while (!queue.isEmpty()) {
-            int current = queue.poll();
-            int cx = current % w;
-            int cy = current / w;
-
-            for (int i = 0; i < 4; i++) {
-                int nx = cx + dx[i];
-                int ny = cy + dy[i];
-
-                if (nx < 0 || nx >= w || ny < 0 || ny >= h) {
-                    continue;
-                }
-
-                int nIdx = ny * w + nx;
-                if (visited[nIdx]) {
-                    continue;
-                }
-                visited[nIdx] = true;
-
-                // Si c'est une barrière routière, on stoppe la propagation dans cette direction
-                if (roadBarrier.get(nx, ny)) {
-                    continue;
-                }
-
-                // Si le pixel est hors de la distance maximale permise, on stoppe
-                if (!allowedZone.get(nx, ny)) {
-                    continue;
-                }
-
-                result.set(nx, ny, true);
-                queue.offer(nIdx);
-            }
-        }
-
-        return result;
-    }
-
-    private BinaryMask extractReliableSeed(BinaryMask mask, int radius) {
-        int r = radius;
-        while (r > 0) {
-            BinaryMask eroded = MorphologyOps.erode(mask, r);
-            if (eroded.countActivePixels() > 0) {
-                return eroded;
-            }
-            r /= 2;
-        }
-        return mask.copy();
-    }
-
-    private BinaryMask keepLargestComponent(BinaryMask mask) {
-        int w = mask.getWidth();
-        int h = mask.getHeight();
-        boolean[] visited = new boolean[w * h];
-        int maxComponentSize = 0;
-        int maxStartIdx = -1;
-
-        int[] dx = {1, -1, 0, 0};
-        int[] dy = {0, 0, 1, -1};
-
-        for (int y = 0; y < h; y++) {
-            for (int x = 0; x < w; x++) {
-                int idx = y * w + x;
-                if (mask.get(x, y) && !visited[idx]) {
-                    int size = 0;
-                    Queue<Integer> q = new ArrayDeque<>();
-                    q.offer(idx);
-                    visited[idx] = true;
-
-                    while (!q.isEmpty()) {
-                        int cur = q.poll();
-                        size++;
-                        int cx = cur % w;
-                        int cy = cur / w;
-
-                        for (int i = 0; i < 4; i++) {
-                            int nx = cx + dx[i];
-                            int ny = cy + dy[i];
-                            if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
-                                int nIdx = ny * w + nx;
-                                if (mask.get(nx, ny) && !visited[nIdx]) {
-                                    visited[nIdx] = true;
-                                    q.offer(nIdx);
-                                }
-                            }
-                        }
-                    }
-
-                    if (size > maxComponentSize) {
-                        maxComponentSize = size;
-                        maxStartIdx = idx;
-                    }
-                }
-            }
-        }
-
-        if (maxStartIdx == -1) {
-            return mask.copy();
-        }
-
-        BinaryMask largest = new BinaryMask(w, h);
-        boolean[] inLargest = new boolean[w * h];
-        Queue<Integer> q = new ArrayDeque<>();
-        q.offer(maxStartIdx);
-        inLargest[maxStartIdx] = true;
-        largest.set(maxStartIdx % w, maxStartIdx / w, true);
-
-        while (!q.isEmpty()) {
-            int cur = q.poll();
-            int cx = cur % w;
-            int cy = cur / w;
-
-            for (int i = 0; i < 4; i++) {
-                int nx = cx + dx[i];
-                int ny = cy + dy[i];
-                if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
-                    int nIdx = ny * w + nx;
-                    if (mask.get(nx, ny) && !inLargest[nIdx]) {
-                        inLargest[nIdx] = true;
-                        largest.set(nx, ny, true);
-                        q.offer(nIdx);
-                    }
-                }
-            }
-        }
-
-        return largest;
+        // Préserver le noyau intérieur du masque initial contre toute perte accidentelle
+        BinaryMask interiorCore = MorphologyOps.erode(roughGreenMask, 1);
+        return rasterized.or(interiorCore);
     }
 }

@@ -10,83 +10,185 @@ import static org.junit.jupiter.api.Assertions.*;
 class RoadSnappingEngineTest {
 
     @Test
-    @DisplayName("Aimantation du masque vert grossier sur les limites d'un rectangle routier")
-    void testSnappingToEnclosingRoads() {
+    @DisplayName("1. Recaler un contour synthétique vers des axes routiers candidats continus")
+    void testRecalerContourVersAxesRoutiersContinus() {
         int w = 60;
         int h = 60;
 
-        // Barrière routière formant un cadre de (15,15) à (45,45)
-        BinaryMask roadBarrier = new BinaryMask(w, h);
-        for (int i = 15; i <= 45; i++) {
-            roadBarrier.set(i, 15, true); // haut
-            roadBarrier.set(i, 45, true); // bas
-            roadBarrier.set(15, i, true); // gauche
-            roadBarrier.set(45, i, true); // droite
-        }
-
-        // Masque vert grossier : centré mais plus petit (de 22 à 38)
+        // Masque carré initial centré : de (20,20) à (35,35)
         BinaryMask roughMask = new BinaryMask(w, h);
-        for (int y = 22; y <= 38; y++) {
-            for (int x = 22; x <= 38; x++) {
+        for (int y = 20; y <= 35; y++) {
+            for (int x = 20; x <= 35; x++) {
                 roughMask.set(x, y, true);
             }
         }
 
+        // Axe routier continu à droite à x=42 (de y=10 à 45)
+        BinaryMask roads = new BinaryMask(w, h);
+        for (int y = 10; y <= 45; y++) {
+            roads.set(42, y, true);
+        }
+
         SnappingConfig config = SnappingConfig.builder()
-                .snapDistance(20)
-                .seedErosionRadius(2)
+                .snapDistance(15)
                 .build();
 
         RoadSnappingEngine engine = new RoadSnappingEngine();
-        BinaryMask snapped = engine.snap(roughMask, roadBarrier, config);
+        BinaryMask snapped = engine.snap(roughMask, roads, config);
 
-        // L'intérieur du cadre routier (ex: 20, 20 et 40, 40) doit être activé
-        assertTrue(snapped.get(30, 30), "Le centre doit être conservé");
-        assertTrue(snapped.get(18, 18), "Le masque doit s'être étendu jusqu'à la barrière");
-        assertTrue(snapped.get(42, 42), "Le masque doit s'être étendu jusqu'à la barrière");
-
-        // Au-delà de la barrière routière (ex: x=10 ou x=50), rien ne doit être actif
-        assertFalse(snapped.get(10, 30), "L'extérieur de la barrière ne doit pas être envahi");
-        assertFalse(snapped.get(50, 30), "L'extérieur de la barrière ne doit pas être envahi");
+        // Le contour droit doit s'être étendu vers la route à x=42
+        assertTrue(snapped.get(40, 28), "Le masque doit s'être étendu vers l'axe routier");
+        // Le centre initial doit toujours être préservé
+        assertTrue(snapped.get(25, 25), "Le centre doit rester actif");
+        // Au-delà de la route (ex: x=50), rien ne doit être activé
+        assertFalse(snapped.get(50, 28), "L'extérieur de la route ne doit pas être activé");
     }
 
     @Test
-    @DisplayName("Rétraction des débordements extérieurs au cadre routier")
-    void testRetractionOfOverflowingAreas() {
-        int w = 60;
-        int h = 60;
-
-        // Barrière routière à x=30
-        BinaryMask roadBarrier = new BinaryMask(w, h);
-        for (int y = 0; y < h; y++) {
-            roadBarrier.set(30, y, true);
-        }
-
-        // Masque vert grossier situé principalement à gauche (x de 10 à 40)
-        // avec noyau à x=20 et débordement à x=35
+    @DisplayName("2. Vérifier qu’aucune route candidate ne renvoie le masque initial")
+    void testAucuneRouteCandidateRenvoieMasqueInitial() {
+        int w = 30;
+        int h = 30;
         BinaryMask roughMask = new BinaryMask(w, h);
-        for (int y = 15; y <= 45; y++) {
-            for (int x = 10; x <= 40; x++) {
+        for (int y = 10; y <= 20; y++) {
+            for (int x = 10; x <= 20; x++) {
                 roughMask.set(x, y, true);
             }
         }
 
-        SnappingConfig config = SnappingConfig.builder()
-                .snapDistance(25)
-                .seedErosionRadius(4)
-                .build();
-
+        BinaryMask emptyRoads = new BinaryMask(w, h);
         RoadSnappingEngine engine = new RoadSnappingEngine();
-        BinaryMask snapped = engine.snap(roughMask, roadBarrier, config);
+        BinaryMask result = engine.snap(roughMask, emptyRoads, SnappingConfig.defaults());
 
-        // La partie gauche (noyau) est préservée
-        assertTrue(snapped.get(20, 30));
-        // Le débordement à droite (séparé par la route x=30) est éliminé
-        assertFalse(snapped.get(35, 30), "La partie isolée derrière la route doit être rétractée");
+        assertEquals(roughMask.countActivePixels(), result.countActivePixels());
+        assertTrue(result.get(15, 15));
     }
 
     @Test
-    @DisplayName("Validation des arguments null ou dimensions discordantes")
+    @DisplayName("3. Vérifier qu’un candidat isolé ne déplace pas le contour")
+    void testCandidatIsoleNeDeplacePasContour() {
+        int w = 50;
+        int h = 50;
+        BinaryMask roughMask = new BinaryMask(w, h);
+        for (int y = 15; y <= 30; y++) {
+            for (int x = 15; x <= 30; x++) {
+                roughMask.set(x, y, true);
+            }
+        }
+
+        // Un seul pixel isolé hors du masque (ex: texte ou pictogramme)
+        BinaryMask roadWithNoise = new BinaryMask(w, h);
+        roadWithNoise.set(38, 22, true);
+
+        RoadSnappingEngine engine = new RoadSnappingEngine();
+        BinaryMask result = engine.snap(roughMask, roadWithNoise, SnappingConfig.defaults());
+
+        // Le pixel isolé n'a aucun support tangentiel -> le contour ne doit pas bouger
+        assertFalse(result.get(38, 22), "Un pixel isolé ne doit pas attirer le contour");
+        assertEquals(roughMask.countActivePixels(), result.countActivePixels());
+    }
+
+    @Test
+    @DisplayName("4. Vérifier que les candidats au-delà de snapDistance sont ignorés")
+    void testCandidatsAuDelaDeSnapDistanceSontIgnores() {
+        int w = 80;
+        int h = 80;
+        BinaryMask roughMask = new BinaryMask(w, h);
+        for (int y = 20; y <= 40; y++) {
+            for (int x = 20; x <= 40; x++) {
+                roughMask.set(x, y, true);
+            }
+        }
+
+        // Route continue mais située à x=70 (distance = 30px par rapport à x=40)
+        BinaryMask farRoad = new BinaryMask(w, h);
+        for (int y = 10; y <= 50; y++) {
+            farRoad.set(70, y, true);
+        }
+
+        // snapDistance = 15 (< distance 30)
+        SnappingConfig config = SnappingConfig.builder()
+                .snapDistance(15)
+                .build();
+
+        RoadSnappingEngine engine = new RoadSnappingEngine();
+        BinaryMask result = engine.snap(roughMask, farRoad, config);
+
+        assertFalse(result.get(65, 30), "La route trop éloignée ne doit pas être atteinte");
+        assertFalse(result.get(70, 30));
+    }
+
+    @Test
+    @DisplayName("5. Vérifier que les portions sans candidat fiable conservent leur contour initial")
+    void testPortionsSansCandidatFiableConserventContour() {
+        int w = 60;
+        int h = 60;
+        BinaryMask roughMask = new BinaryMask(w, h);
+        for (int y = 20; y <= 35; y++) {
+            for (int x = 20; x <= 35; x++) {
+                roughMask.set(x, y, true);
+            }
+        }
+
+        // Route uniquement sur le bord droit x=40
+        BinaryMask rightRoad = new BinaryMask(w, h);
+        for (int y = 15; y <= 40; y++) {
+            rightRoad.set(40, y, true);
+        }
+
+        RoadSnappingEngine engine = new RoadSnappingEngine();
+        BinaryMask result = engine.snap(roughMask, rightRoad, SnappingConfig.defaults());
+
+        // Le bord gauche (x=20) n'a pas de route en face et doit conserver sa position
+        assertTrue(result.get(21, 28));
+        assertFalse(result.get(15, 28), "Le côté gauche sans route ne doit pas s'étendre");
+    }
+
+    @Test
+    @DisplayName("6. Vérifier que le noyau intérieur du masque est préservé")
+    void testNoyauInterieurPreserve() {
+        int w = 50;
+        int h = 50;
+        BinaryMask roughMask = new BinaryMask(w, h);
+        for (int y = 15; y <= 35; y++) {
+            for (int x = 15; x <= 35; x++) {
+                roughMask.set(x, y, true);
+            }
+        }
+
+        BinaryMask road = new BinaryMask(w, h);
+        for (int y = 10; y <= 40; y++) {
+            road.set(42, y, true);
+        }
+
+        RoadSnappingEngine engine = new RoadSnappingEngine();
+        BinaryMask result = engine.snap(roughMask, road, SnappingConfig.defaults());
+
+        // Tous les pixels du noyau intérieur (ex: (25,25)) doivent rester actifs
+        assertTrue(result.get(25, 25));
+        assertTrue(result.get(20, 20));
+        assertTrue(result.get(30, 30));
+    }
+
+    @Test
+    @DisplayName("7. Vérifier le repli sur le masque initial en cas de géométrie invalide ou vide")
+    void testRepliEnCasDeGeometrieInvalideOuVide() {
+        RoadSnappingEngine engine = new RoadSnappingEngine();
+        BinaryMask emptyRough = new BinaryMask(30, 30);
+        BinaryMask roads = new BinaryMask(30, 30);
+        BinaryMask resEmpty = engine.snap(emptyRough, roads, SnappingConfig.defaults());
+        assertEquals(0, resEmpty.countActivePixels());
+
+        // Masque de 2 pixels (pas un polygone)
+        BinaryMask twoPixels = new BinaryMask(30, 30);
+        twoPixels.set(5, 5, true);
+        twoPixels.set(5, 6, true);
+        BinaryMask resTwo = engine.snap(twoPixels, roads, SnappingConfig.defaults());
+        assertEquals(2, resTwo.countActivePixels());
+    }
+
+    @Test
+    @DisplayName("8. Validation des arguments null ou dimensions discordantes")
     void testInvalidArguments() {
         RoadSnappingEngine engine = new RoadSnappingEngine();
         BinaryMask m1 = new BinaryMask(20, 20);
@@ -98,82 +200,5 @@ class RoadSnappingEngineTest {
         assertThrows(IllegalArgumentException.class, () -> engine.snap(m1, null, config));
         assertThrows(IllegalArgumentException.class, () -> engine.snap(m1, m2, null));
         assertThrows(IllegalArgumentException.class, () -> engine.snap(m1, mDifferentSize, config));
-    }
-
-    @Test
-    @DisplayName("Un masque grossier vide retourne un résultat vide sans lever d'exception")
-    void testEmptyRoughMaskReturnsEmpty() {
-        RoadSnappingEngine engine = new RoadSnappingEngine();
-        BinaryMask emptyRough = new BinaryMask(30, 30);
-        BinaryMask emptyRoad = new BinaryMask(30, 30);
-        BinaryMask result = engine.snap(emptyRough, emptyRoad, SnappingConfig.defaults());
-
-        assertEquals(0, result.countActivePixels());
-    }
-
-    @Test
-    @DisplayName("Languette fine : repli adaptatif de l'érosion")
-    void testThinSliverErosionFallback() {
-        RoadSnappingEngine engine = new RoadSnappingEngine();
-        BinaryMask thinMask = new BinaryMask(40, 40);
-        // Languette de 3 pixels de large (alors que seedErosionRadius par défaut = 8)
-        for (int y = 10; y <= 30; y++) {
-            for (int x = 18; x <= 20; x++) {
-                thinMask.set(x, y, true);
-            }
-        }
-
-        BinaryMask roadBarrier = new BinaryMask(40, 40);
-        BinaryMask result = engine.snap(thinMask, roadBarrier, SnappingConfig.defaults());
-
-        assertTrue(result.countActivePixels() > 0, "La languette fine doit être préservée grâce au repli adaptatif");
-        assertTrue(result.get(19, 20));
-    }
-
-    @Test
-    @DisplayName("Arrêt de la propagation au-delà de snapDistance en l'absence de route")
-    void testSnapDistanceHaltsPropagationWithoutRoad() {
-        RoadSnappingEngine engine = new RoadSnappingEngine();
-        BinaryMask roughMask = new BinaryMask(50, 50);
-        roughMask.set(25, 25, true);
-
-        BinaryMask noRoads = new BinaryMask(50, 50);
-        SnappingConfig config = SnappingConfig.builder()
-                .snapDistance(5)
-                .seedErosionRadius(1)
-                .build();
-
-        BinaryMask result = engine.snap(roughMask, noRoads, config);
-
-        assertTrue(result.get(25, 25));
-        assertTrue(result.get(25, 30), "À 5px de distance, doit être inclus");
-        assertFalse(result.get(25, 35), "À 10px de distance (> snapDistance 5), doit être exclu");
-    }
-
-    @Test
-    @DisplayName("Collision graine et route : repli sur le masque initial hors route")
-    void testSeedRoadCollisionFallback() {
-        RoadSnappingEngine engine = new RoadSnappingEngine();
-        BinaryMask rough = new BinaryMask(30, 30);
-        // Carré grossier de 10 à 20
-        for (int y = 10; y <= 20; y++) {
-            for (int x = 10; x <= 20; x++) {
-                rough.set(x, y, true);
-            }
-        }
-
-        // Route qui coupe précisément au centre érodé (x=15)
-        BinaryMask road = new BinaryMask(30, 30);
-        for (int y = 0; y < 30; y++) {
-            road.set(15, y, true);
-        }
-
-        SnappingConfig config = SnappingConfig.builder()
-                .seedErosionRadius(4)
-                .build();
-
-        BinaryMask result = engine.snap(rough, road, config);
-        assertTrue(result.countActivePixels() > 0, "Le repli doit permettre de conserver le secteur hors route");
-        assertFalse(result.get(15, 15), "La route elle-même ne doit pas être incluse");
     }
 }

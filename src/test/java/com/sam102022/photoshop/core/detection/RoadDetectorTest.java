@@ -9,6 +9,7 @@ import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -20,11 +21,10 @@ class RoadDetectorTest {
     void testDetectOrangeHighway() {
         BufferedImage map = new BufferedImage(40, 40, BufferedImage.TYPE_INT_RGB);
         Graphics2D g = map.createGraphics();
-        // Fond cartographique beige/gris typique
         g.setColor(new Color(230, 226, 219));
         g.fillRect(0, 0, 40, 40);
 
-        // Voie rapide orange (R=245, G=165, B=100)
+        // Voie rapide orange
         g.setColor(new Color(245, 165, 100));
         g.fillRect(18, 0, 4, 40);
         g.dispose();
@@ -44,7 +44,7 @@ class RoadDetectorTest {
         g.setColor(new Color(230, 226, 219));
         g.fillRect(0, 0, 40, 40);
 
-        // Route jaune / crème (R=250, G=230, B=140)
+        // Route jaune / crème
         g.setColor(new Color(250, 230, 140));
         g.fillRect(0, 18, 40, 4);
         g.dispose();
@@ -66,7 +66,6 @@ class RoadDetectorTest {
         // Ligne d'autoroute avec interruption de 2 pixels
         g.setColor(new Color(245, 165, 100));
         g.fillRect(20, 0, 4, 23);
-        // trou de y=23 à y=25
         g.fillRect(20, 26, 4, 24);
         g.dispose();
 
@@ -77,25 +76,22 @@ class RoadDetectorTest {
     }
 
     @Test
-    @DisplayName("Détection des rues secondaires blanches et contours nets par gradient Sobel")
-    void testDetectWhiteStreetAndSobelGradient() {
+    @DisplayName("Le blanc ou le fond ordinaire ne produit pas de candidats routiers sur la seule couleur")
+    void testWhiteAloneDoesNotProduceRoads() {
         BufferedImage map = new BufferedImage(40, 40, BufferedImage.TYPE_INT_RGB);
         Graphics2D g = map.createGraphics();
-        // Fond foncé pour accentuer le gradient
-        g.setColor(new Color(100, 100, 100));
+        g.setColor(new Color(230, 226, 219));
         g.fillRect(0, 0, 40, 40);
 
-        // Rue blanche très lumineuse (R=250, G=250, B=250)
-        g.setColor(new Color(250, 250, 250));
+        // Zone blanche (bâtiment ou pavé)
+        g.setColor(new Color(255, 255, 255));
         g.fillRect(15, 0, 6, 40);
         g.dispose();
 
         RoadDetector detector = new RoadDetector();
         BinaryMask roadBarrier = detector.detectRoads(map, SnappingConfig.defaults());
 
-        assertTrue(roadBarrier.get(18, 20), "Le centre de la rue blanche doit être détecté");
-        // Les bordures présentent un fort gradient Sobel
-        assertTrue(roadBarrier.get(14, 20) || roadBarrier.get(15, 20), "Le gradient Sobel de la bordure doit être capturé");
+        assertEquals(0, roadBarrier.countActivePixels(), "La couleur blanche seule ne doit pas générer de route");
     }
 
     @Test

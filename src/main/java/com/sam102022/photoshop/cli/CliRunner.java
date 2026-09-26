@@ -63,6 +63,14 @@ public final class CliRunner {
             System.out.println("-> Détection des axes routiers Google Maps...");
             RoadDetector roadDetector = new RoadDetector();
             BinaryMask roadBarrier = roadDetector.detectRoads(mapImg, config);
+            Path roadDebugPath = Paths.get("road-debug.png");
+
+            ImageExporter.savePng(
+                    ImageExporter.createMaskImage(roadBarrier),
+                    roadDebugPath
+            );
+
+            System.out.println("   Masque routes debug : " + roadDebugPath.toAbsolutePath());
             System.out.printf("   %d pixels de barrière routière identifiés.\n", roadBarrier.countActivePixels());
 
             System.out.println("-> Recalage géodésique sur les routes...");
