@@ -10,15 +10,19 @@ import com.sam102022.photoshop.io.ImageLoader;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
+import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.nio.file.Path;
+import java.util.concurrent.ExecutionException;
 
 /**
  * Interface graphique Swing pour la visualisation et le détourage interactif.
  */
 public class MainWindow extends JFrame {
+
+    private record ClippingResult(BufferedImage image, BinaryMask mask) {}
 
     private BufferedImage mapImage;
     private BufferedImage maskImage;
@@ -119,6 +123,7 @@ public class MainWindow extends JFrame {
 
     private void chooseMapFile() {
         JFileChooser chooser = new JFileChooser();
+        chooser.setFileFilter(new FileNameExtensionFilter("Images (*.png, *.jpg, *.jpeg)", "png", "jpg", "jpeg"));
         if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
             try {
                 File file = chooser.getSelectedFile();
@@ -133,6 +138,7 @@ public class MainWindow extends JFrame {
 
     private void chooseMaskFile() {
         JFileChooser chooser = new JFileChooser();
+        chooser.setFileFilter(new FileNameExtensionFilter("Images (*.png, *.jpg, *.jpeg)", "png", "jpg", "jpeg"));
         if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
             try {
                 File file = chooser.getSelectedFile();
@@ -149,6 +155,12 @@ public class MainWindow extends JFrame {
         if (mapImage == null) return;
         if (maskImage == null) {
             previewOriginalPanel.setImage(mapImage);
+            return;
+        }
+
+        if (mapImage.getWidth() != maskImage.getWidth() || mapImage.getHeight() != maskImage.getHeight()) {
+            previewOriginalPanel.setImage(mapImage);
+            JOptionPane.showMessageDialog(this, "Attention : Les dimensions de la carte et du calque diffèrent.", "Avertissement", JOptionPane.WARNING_MESSAGE);
             return;
         }
 
@@ -176,6 +188,7 @@ public class MainWindow extends JFrame {
         }
 
         clipButton.setEnabled(false);
+        exportButton.setEnabled(false);
         statusLabel.setText("Détourage en cours...");
 
         int snapDist = snapDistanceSlider.getValue();
@@ -190,9 +203,9 @@ public class MainWindow extends JFrame {
 
         long startTime = System.currentTimeMillis();
 
-        SwingWorker<BufferedImage, Void> worker = new SwingWorker<>() {
+        SwingWorker<ClippingResult, Void> worker = new SwingWorker<>() {
             @Override
-            protected BufferedImage doInBackground() {
+            protected ClippingResult doInBackground() {
                 GreenMaskExtractor greenExtractor = new GreenMaskExtractor();
                 BinaryMask roughMask = greenExtractor.extract(maskImage);
 
@@ -200,21 +213,25 @@ public class MainWindow extends JFrame {
                 BinaryMask roadBarrier = roadDetector.detectRoads(mapImage, config);
 
                 RoadSnappingEngine engine = new RoadSnappingEngine();
-                resultMask = engine.snap(roughMask, roadBarrier, config);
+                BinaryMask computedMask = engine.snap(roughMask, roadBarrier, config);
 
-                return ImageExporter.createClippedImage(mapImage, resultMask, config.smoothRadius());
+                BufferedImage renderedImage = ImageExporter.createClippedImage(mapImage, computedMask, config.smoothRadius());
+                return new ClippingResult(renderedImage, computedMask);
             }
 
             @Override
             protected void done() {
                 try {
-                    clippedImage = get();
+                    ClippingResult res = get();
+                    clippedImage = res.image();
+                    resultMask = res.mask();
                     previewResultPanel.setImage(clippedImage);
                     exportButton.setEnabled(true);
                     long elapsed = System.currentTimeMillis() - startTime;
                     statusLabel.setText(String.format("Détourage terminé en %d ms (Pixels détourés : %d)", elapsed, resultMask.countActivePixels()));
-                } catch (Exception ex) {
-                    JOptionPane.showMessageDialog(MainWindow.this, "Erreur de détourage : " + ex.getMessage(), "Erreur", JOptionPane.ERROR_MESSAGE);
+                } catch (InterruptedException | ExecutionException ex) {
+                    Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
+                    JOptionPane.showMessageDialog(MainWindow.this, "Erreur de détourage : " + cause.getMessage(), "Erreur", JOptionPane.ERROR_MESSAGE);
                     statusLabel.setText("Erreur");
                 } finally {
                     clipButton.setEnabled(true);
@@ -229,6 +246,7 @@ public class MainWindow extends JFrame {
         if (clippedImage == null || resultMask == null) return;
 
         JFileChooser chooser = new JFileChooser();
+        chooser.setFileFilter(new FileNameExtensionFilter("Image PNG (*.png)", "png"));
         chooser.setSelectedFile(new File("clipped_output.png"));
         if (chooser.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
             try {
@@ -276,12 +294,23 @@ public class MainWindow extends JFrame {
                 drawCheckerboard(g, w, h);
             }
 
+            Insets insets = getInsets();
+            int availW = w - insets.left - insets.right;
+            int availH = h - insets.top - insets.bottom;
+            if (availW <= 0 || availH <= 0) {
+                return;
+            }
+
             if (image != null) {
-                double scale = Math.min((double) (w - 20) / image.getWidth(), (double) (h - 40) / image.getHeight());
-                int drawW = (int) (image.getWidth() * scale);
-                int drawH = (int) (image.getHeight() * scale);
-                int drawX = (w - drawW) / 2;
-                int drawY = 20 + (h - 40 - drawH) / 2;
+                if (g instanceof Graphics2D g2d) {
+                    g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+                }
+
+                double scale = Math.min((double) availW / image.getWidth(), (double) availH / image.getHeight());
+                int drawW = Math.max(1, (int) (image.getWidth() * scale));
+                int drawH = Math.max(1, (int) (image.getHeight() * scale));
+                int drawX = insets.left + (availW - drawW) / 2;
+                int drawY = insets.top + (availH - drawH) / 2;
 
                 g.drawImage(image, drawX, drawY, drawW, drawH, null);
             } else {
