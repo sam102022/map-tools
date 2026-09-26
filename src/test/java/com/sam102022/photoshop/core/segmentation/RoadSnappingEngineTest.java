@@ -99,4 +99,81 @@ class RoadSnappingEngineTest {
         assertThrows(IllegalArgumentException.class, () -> engine.snap(m1, m2, null));
         assertThrows(IllegalArgumentException.class, () -> engine.snap(m1, mDifferentSize, config));
     }
+
+    @Test
+    @DisplayName("Un masque grossier vide retourne un résultat vide sans lever d'exception")
+    void testEmptyRoughMaskReturnsEmpty() {
+        RoadSnappingEngine engine = new RoadSnappingEngine();
+        BinaryMask emptyRough = new BinaryMask(30, 30);
+        BinaryMask emptyRoad = new BinaryMask(30, 30);
+        BinaryMask result = engine.snap(emptyRough, emptyRoad, SnappingConfig.defaults());
+
+        assertEquals(0, result.countActivePixels());
+    }
+
+    @Test
+    @DisplayName("Languette fine : repli adaptatif de l'érosion")
+    void testThinSliverErosionFallback() {
+        RoadSnappingEngine engine = new RoadSnappingEngine();
+        BinaryMask thinMask = new BinaryMask(40, 40);
+        // Languette de 3 pixels de large (alors que seedErosionRadius par défaut = 8)
+        for (int y = 10; y <= 30; y++) {
+            for (int x = 18; x <= 20; x++) {
+                thinMask.set(x, y, true);
+            }
+        }
+
+        BinaryMask roadBarrier = new BinaryMask(40, 40);
+        BinaryMask result = engine.snap(thinMask, roadBarrier, SnappingConfig.defaults());
+
+        assertTrue(result.countActivePixels() > 0, "La languette fine doit être préservée grâce au repli adaptatif");
+        assertTrue(result.get(19, 20));
+    }
+
+    @Test
+    @DisplayName("Arrêt de la propagation au-delà de snapDistance en l'absence de route")
+    void testSnapDistanceHaltsPropagationWithoutRoad() {
+        RoadSnappingEngine engine = new RoadSnappingEngine();
+        BinaryMask roughMask = new BinaryMask(50, 50);
+        roughMask.set(25, 25, true);
+
+        BinaryMask noRoads = new BinaryMask(50, 50);
+        SnappingConfig config = SnappingConfig.builder()
+                .snapDistance(5)
+                .seedErosionRadius(1)
+                .build();
+
+        BinaryMask result = engine.snap(roughMask, noRoads, config);
+
+        assertTrue(result.get(25, 25));
+        assertTrue(result.get(25, 30), "À 5px de distance, doit être inclus");
+        assertFalse(result.get(25, 35), "À 10px de distance (> snapDistance 5), doit être exclu");
+    }
+
+    @Test
+    @DisplayName("Collision graine et route : repli sur le masque initial hors route")
+    void testSeedRoadCollisionFallback() {
+        RoadSnappingEngine engine = new RoadSnappingEngine();
+        BinaryMask rough = new BinaryMask(30, 30);
+        // Carré grossier de 10 à 20
+        for (int y = 10; y <= 20; y++) {
+            for (int x = 10; x <= 20; x++) {
+                rough.set(x, y, true);
+            }
+        }
+
+        // Route qui coupe précisément au centre érodé (x=15)
+        BinaryMask road = new BinaryMask(30, 30);
+        for (int y = 0; y < 30; y++) {
+            road.set(15, y, true);
+        }
+
+        SnappingConfig config = SnappingConfig.builder()
+                .seedErosionRadius(4)
+                .build();
+
+        BinaryMask result = engine.snap(rough, road, config);
+        assertTrue(result.countActivePixels() > 0, "Le repli doit permettre de conserver le secteur hors route");
+        assertFalse(result.get(15, 15), "La route elle-même ne doit pas être incluse");
+    }
 }

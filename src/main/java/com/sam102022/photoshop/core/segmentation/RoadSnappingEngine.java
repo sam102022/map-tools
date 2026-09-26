@@ -39,6 +39,22 @@ public class RoadSnappingEngine {
             }
         }
 
+        // Si la graine érodée est totalement couverte par des routes, se replier sur le masque initial hors routes
+        if (cleanSeed.countActivePixels() == 0) {
+            for (int y = 0; y < h; y++) {
+                for (int x = 0; x < w; x++) {
+                    if (roughGreenMask.get(x, y) && !roadBarrier.get(x, y)) {
+                        cleanSeed.set(x, y, true);
+                    }
+                }
+            }
+        }
+
+        // Si aucun pixel n'est éligible, retourner un masque vide
+        if (cleanSeed.countActivePixels() == 0) {
+            return new BinaryMask(w, h);
+        }
+
         // Ne conserver que la composante connexe principale (la plus grande) pour éliminer les faux germes
         BinaryMask seed = keepLargestComponent(cleanSeed);
 
