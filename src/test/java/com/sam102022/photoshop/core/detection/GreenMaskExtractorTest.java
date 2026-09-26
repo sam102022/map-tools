@@ -77,4 +77,39 @@ class GreenMaskExtractorTest {
         GreenMaskExtractor extractor = new GreenMaskExtractor();
         assertThrows(IllegalArgumentException.class, () -> extractor.extract(null));
     }
+
+    @Test
+    @DisplayName("Extraction d'un vert olive détecté via l'analyse HSV (G - R < 25)")
+    void testExtractHsvGreen() {
+        // R=100, G=115, B=60 : G - R = 15 (< 25), non capté par la règle 1 mais teinte HSV ~76°, S=0.48, V=0.45
+        BufferedImage image = new BufferedImage(30, 30, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = image.createGraphics();
+        g.setColor(Color.BLACK);
+        g.fillRect(0, 0, 30, 30);
+        g.setColor(new Color(100, 115, 60));
+        g.fillRect(5, 5, 20, 20);
+        g.dispose();
+
+        GreenMaskExtractor extractor = new GreenMaskExtractor();
+        BinaryMask mask = extractor.extract(image);
+
+        assertTrue(mask.get(15, 15), "Le vert olive doit être capté par l'analyse HSV");
+        assertTrue(mask.countActivePixels() > 200);
+    }
+
+    @Test
+    @DisplayName("Les pixels transparents ou quasi-transparents (alpha < 30) sont ignorés")
+    void testIgnoreTransparentPixels() {
+        BufferedImage image = new BufferedImage(30, 30, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = image.createGraphics();
+        // Vert mais avec un alpha très faible (15/255)
+        g.setColor(new Color(0, 255, 0, 15));
+        g.fillRect(5, 5, 20, 20);
+        g.dispose();
+
+        GreenMaskExtractor extractor = new GreenMaskExtractor();
+        BinaryMask mask = extractor.extract(image);
+
+        assertEquals(0, mask.countActivePixels(), "Les pixels transparents doivent être ignorés");
+    }
 }
