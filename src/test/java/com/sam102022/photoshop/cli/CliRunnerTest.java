@@ -91,18 +91,20 @@ class CliRunnerTest {
     }
 
     @Test
-    @DisplayName("Exécution complète d'un scénario CLI nominal")
+    @DisplayName("Exécution complète d'un scénario CLI avec anti-aliasing par défaut et contrôle des nuances de gris dans mask-out")
     void testEndToEndCliRun(@TempDir Path tempDir) throws Exception {
         Path mapFile = tempDir.resolve("map.png");
         Path maskFile = tempDir.resolve("mask.png");
         Path outFile = tempDir.resolve("out.png");
         Path maskOutFile = tempDir.resolve("mask_out.png");
 
-        BufferedImage map = new BufferedImage(30, 30, BufferedImage.TYPE_INT_RGB);
-        BufferedImage mask = new BufferedImage(30, 30, BufferedImage.TYPE_INT_RGB);
+        BufferedImage map = new BufferedImage(40, 40, BufferedImage.TYPE_INT_RGB);
+        BufferedImage mask = new BufferedImage(40, 40, BufferedImage.TYPE_INT_RGB);
         Graphics2D g = mask.createGraphics();
         g.setColor(new Color(0, 220, 0));
-        g.fillRect(5, 5, 20, 20);
+        // Triangle oblique pour générer des bords sub-pixel anti-aliasés
+        Polygon poly = new Polygon(new int[]{5, 35, 15}, new int[]{5, 10, 35}, 3);
+        g.fillPolygon(poly);
         g.dispose();
 
         ImageIO.write(map, "PNG", mapFile.toFile());
@@ -113,11 +115,102 @@ class CliRunnerTest {
                 "--mask", maskFile.toString(),
                 "--output", outFile.toString(),
                 "--mask-out", maskOutFile.toString(),
-                "--snap-distance", "15"
+                "--snap-distance", "15",
+                "--aa"
         });
 
         assertEquals(0, exitCode);
         assertTrue(outFile.toFile().exists());
         assertTrue(maskOutFile.toFile().exists());
+
+        // 1. Vérifier que mask-out contient des pixels gris intermédiaires ]0, 255[
+        BufferedImage maskOutImg = ImageIO.read(maskOutFile.toFile());
+        assertNotNull(maskOutImg);
+        int grayIntermediates = 0;
+        for (int y = 0; y < maskOutImg.getHeight(); y++) {
+            for (int x = 0; x < maskOutImg.getWidth(); x++) {
+                int sample = maskOutImg.getRaster().getSample(x, y, 0);
+                if (sample > 0 && sample < 255) {
+                    grayIntermediates++;
+                }
+            }
+        }
+        assertTrue(grayIntermediates > 5, "mask-out doit contenir des pixels gris sub-pixel intermédiaires ]0, 255[, trouvé: " + grayIntermediates);
+
+        // 2. Vérifier que l'image détourée contient des valeurs alpha progressives
+        BufferedImage clippedImg = ImageIO.read(outFile.toFile());
+        assertNotNull(clippedImg);
+        int alphaIntermediates = 0;
+        for (int y = 0; y < clippedImg.getHeight(); y++) {
+            for (int x = 0; x < clippedImg.getWidth(); x++) {
+                int alpha = (clippedImg.getRGB(x, y) >>> 24) & 0xFF;
+                if (alpha > 0 && alpha < 255) {
+                    alphaIntermediates++;
+                }
+            }
+        }
+        assertTrue(alphaIntermediates > 5, "L'image détourée doit contenir un dégradé alpha progressif, trouvé: " + alphaIntermediates);
+    }
+
+    @Test
+    @DisplayName("Option --no-aa / --no-antialias désactive l'anti-aliasing (sorties strictement binaires)")
+    void testCliWithNoAntialiasingOption(@TempDir Path tempDir) throws Exception {
+        Path mapFile = tempDir.resolve("map.png");
+        Path maskFile = tempDir.resolve("mask.png");
+        Path outFile = tempDir.resolve("out_no_aa.png");
+        Path maskOutFile = tempDir.resolve("mask_no_aa.png");
+
+        BufferedImage map = new BufferedImage(40, 40, BufferedImage.TYPE_INT_RGB);
+        BufferedImage mask = new BufferedImage(40, 40, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = mask.createGraphics();
+        g.setColor(new Color(0, 220, 0));
+        Polygon poly = new Polygon(new int[]{5, 35, 15}, new int[]{5, 10, 35}, 3);
+        g.fillPolygon(poly);
+        g.dispose();
+
+        ImageIO.write(map, "PNG", mapFile.toFile());
+        ImageIO.write(mask, "PNG", maskFile.toFile());
+
+        int exitCode = CliRunner.run(new String[]{
+                "--map", mapFile.toString(),
+                "--mask", maskFile.toString(),
+                "--output", outFile.toString(),
+                "--mask-out", maskOutFile.toString(),
+                "--smooth", "0",
+                "--no-aa"
+        });
+
+        assertEquals(0, exitCode);
+
+        // mask-out doit être strictement binaire (0 ou 255)
+        BufferedImage maskOutImg = ImageIO.read(maskOutFile.toFile());
+        for (int y = 0; y < maskOutImg.getHeight(); y++) {
+            for (int x = 0; x < maskOutImg.getWidth(); x++) {
+                int sample = maskOutImg.getRaster().getSample(x, y, 0);
+                assertTrue(sample == 0 || sample == 255, "Sans AA, mask-out doit être strictement 0 ou 255, trouvé: " + sample);
+            }
+        }
+
+        // image détourée doit avoir un canal alpha strictement binaire
+        BufferedImage clippedImg = ImageIO.read(outFile.toFile());
+        for (int y = 0; y < clippedImg.getHeight(); y++) {
+            for (int x = 0; x < clippedImg.getWidth(); x++) {
+                int alpha = (clippedImg.getRGB(x, y) >>> 24) & 0xFF;
+                assertTrue(alpha == 0 || alpha == 255, "Sans AA, l'alpha doit être strictement 0 ou 255, trouvé: " + alpha);
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("Échec si conflit entre --aa et --no-aa")
+    void testCliConflictingAntialiasingOptions() {
+        int exitCode = CliRunner.run(new String[]{
+                "--map", "map.png",
+                "--mask", "mask.png",
+                "--aa",
+                "--no-aa"
+        });
+        assertEquals(1, exitCode);
+        assertTrue(errContent.toString().contains("Conflit"));
     }
 }

@@ -62,6 +62,30 @@ class IntegrationCliTest {
 
         assertTrue(hasTransparent, "L'image détourée doit contenir des zones transparentes");
         assertTrue(hasOpaque, "L'image détourée doit contenir des zones opaques");
+
+        // Contrôle de l'anti-aliasing sub-pixel de bout en bout sur l'image détourée
+        int clippedSubpixelCount = 0;
+        for (int y = 0; y < clippedImg.getHeight(); y++) {
+            for (int x = 0; x < clippedImg.getWidth(); x++) {
+                int alpha = (clippedImg.getRGB(x, y) >>> 24) & 0xFF;
+                if (alpha > 0 && alpha < 255) {
+                    clippedSubpixelCount++;
+                }
+            }
+        }
+        assertTrue(clippedSubpixelCount > 1000, "L'image détourée réelle doit comporter des milliers de pixels sub-pixel anti-aliasés, trouvé: " + clippedSubpixelCount);
+
+        // Contrôle de la présence de nuances de gris sub-pixel dans le masque exporté
+        int maskSubpixelCount = 0;
+        for (int y = 0; y < maskImg.getHeight(); y++) {
+            for (int x = 0; x < maskImg.getWidth(); x++) {
+                int sample = maskImg.getRaster().getSample(x, y, 0);
+                if (sample > 0 && sample < 255) {
+                    maskSubpixelCount++;
+                }
+            }
+        }
+        assertTrue(maskSubpixelCount > 1000, "Le masque exporté doit comporter des milliers de nuances de gris sub-pixel, trouvé: " + maskSubpixelCount);
     }
 
     @Test
@@ -95,5 +119,30 @@ class IntegrationCliTest {
         assertNotNull(clippedImg);
         assertEquals(2227, clippedImg.getWidth());
         assertEquals(1559, clippedImg.getHeight());
+
+        BufferedImage maskImg = ImageIO.read(outMask.toFile());
+        assertNotNull(maskImg);
+
+        int clippedSubpixelCount = 0;
+        for (int y = 0; y < clippedImg.getHeight(); y++) {
+            for (int x = 0; x < clippedImg.getWidth(); x++) {
+                int alpha = (clippedImg.getRGB(x, y) >>> 24) & 0xFF;
+                if (alpha > 0 && alpha < 255) {
+                    clippedSubpixelCount++;
+                }
+            }
+        }
+        assertTrue(clippedSubpixelCount > 1000, "L'image détourée issue du masque gris doit comporter des pixels sub-pixel, trouvé: " + clippedSubpixelCount);
+
+        int maskSubpixelCount = 0;
+        for (int y = 0; y < maskImg.getHeight(); y++) {
+            for (int x = 0; x < maskImg.getWidth(); x++) {
+                int sample = maskImg.getRaster().getSample(x, y, 0);
+                if (sample > 0 && sample < 255) {
+                    maskSubpixelCount++;
+                }
+            }
+        }
+        assertTrue(maskSubpixelCount > 1000, "Le masque gris exporté doit comporter des nuances sub-pixel, trouvé: " + maskSubpixelCount);
     }
 }

@@ -13,6 +13,15 @@ public final class MorphologyOps {
     private MorphologyOps() {
     }
 
+    /**
+     * Applique une opération de dilatation morphologique 2D sur un masque binaire.
+     * Chaque pixel actif étend son empreinte dans une fenêtre carrée de demi-largeur {@code radius}.
+     *
+     * @param mask   Masque binaire d'entrée.
+     * @param radius Rayon de dilatation en pixels. Si {@code <= 0}, une copie conforme est retournée.
+     * @return Nouveau masque binaire dilaté.
+     * @throws IllegalArgumentException si mask est null.
+     */
     public static BinaryMask dilate(BinaryMask mask, int radius) {
         if (mask == null) {
             throw new IllegalArgumentException("Le masque ne peut pas être null.");
@@ -27,22 +36,45 @@ public final class MorphologyOps {
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
                 if (mask.get(x, y)) {
-                    int minX = Math.max(0, x - radius);
-                    int maxX = Math.min(w - 1, x + radius);
-                    int minY = Math.max(0, y - radius);
-                    int maxY = Math.min(h - 1, y + radius);
-
-                    for (int ny = minY; ny <= maxY; ny++) {
-                        for (int nx = minX; nx <= maxX; nx++) {
-                            result.set(nx, ny, true);
-                        }
-                    }
+                    dilatePixel(result, x, y, radius, w, h);
                 }
             }
         }
         return result;
     }
 
+    /**
+     * Active les pixels voisins d'un pixel source dans une fenêtre carrée de rayon donné.
+     *
+     * @param result Masque binaire de destination.
+     * @param x      Coordonnée X du pixel source.
+     * @param y      Coordonnée Y du pixel source.
+     * @param radius Rayon de dilatation en pixels.
+     * @param w      Largeur du masque.
+     * @param h      Hauteur du masque.
+     */
+    private static void dilatePixel(BinaryMask result, int x, int y, int radius, int w, int h) {
+        int minX = Math.max(0, x - radius);
+        int maxX = Math.min(w - 1, x + radius);
+        int minY = Math.max(0, y - radius);
+        int maxY = Math.min(h - 1, y + radius);
+
+        for (int ny = minY; ny <= maxY; ny++) {
+            for (int nx = minX; nx <= maxX; nx++) {
+                result.set(nx, ny, true);
+            }
+        }
+    }
+
+    /**
+     * Applique une opération d'érosion morphologique 2D sur un masque binaire.
+     * Un pixel actif n'est conservé que si l'ensemble de son voisinage carré de demi-largeur {@code radius} est actif.
+     *
+     * @param mask   Masque binaire d'entrée.
+     * @param radius Rayon d'érosion en pixels. Si {@code <= 0}, une copie conforme est retournée.
+     * @return Nouveau masque binaire érodé.
+     * @throws IllegalArgumentException si mask est null.
+     */
     public static BinaryMask erode(BinaryMask mask, int radius) {
         if (mask == null) {
             throw new IllegalArgumentException("Le masque ne peut pas être null.");
@@ -56,30 +88,7 @@ public final class MorphologyOps {
 
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
-                if (!mask.get(x, y)) {
-                    continue;
-                }
-                boolean allNeighborsActive = true;
-                int minX = Math.max(0, x - radius);
-                int maxX = Math.min(w - 1, x + radius);
-                int minY = Math.max(0, y - radius);
-                int maxY = Math.min(h - 1, y + radius);
-
-                if (x - radius < 0 || x + radius >= w || y - radius < 0 || y + radius >= h) {
-                    allNeighborsActive = false;
-                } else {
-                    checkLoop:
-                    for (int ny = minY; ny <= maxY; ny++) {
-                        for (int nx = minX; nx <= maxX; nx++) {
-                            if (!mask.get(nx, ny)) {
-                                allNeighborsActive = false;
-                                break checkLoop;
-                            }
-                        }
-                    }
-                }
-
-                if (allNeighborsActive) {
+                if (mask.get(x, y) && areAllNeighborsActive(mask, x, y, radius, w, h)) {
                     result.set(x, y, true);
                 }
             }
@@ -87,6 +96,44 @@ public final class MorphologyOps {
         return result;
     }
 
+    /**
+     * Vérifie si tous les pixels d'un voisinage carré de rayon donné autour de (x, y) sont actifs.
+     *
+     * @param mask   Masque binaire source.
+     * @param x      Coordonnée X du centre.
+     * @param y      Coordonnée Y du centre.
+     * @param radius Rayon de la fenêtre carrée.
+     * @param w      Largeur du masque.
+     * @param h      Hauteur du masque.
+     * @return Vrai si toute la fenêtre de rayon est contenue dans l'image et composée de pixels actifs.
+     */
+    private static boolean areAllNeighborsActive(BinaryMask mask, int x, int y, int radius, int w, int h) {
+        if (x - radius < 0 || x + radius >= w || y - radius < 0 || y + radius >= h) {
+            return false;
+        }
+
+        for (int ny = y - radius; ny <= y + radius; ny++) {
+            for (int nx = x - radius; nx <= x + radius; nx++) {
+                if (!mask.get(nx, ny)) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private static final int[] DX4 = {1, -1, 0, 0};
+    private static final int[] DY4 = {0, 0, 1, -1};
+
+    /**
+     * Applique une opération de fermeture morphologique 2D (dilatation suivie d'une érosion).
+     * Permet de combler les trous étroits et de connecter les composantes disjointes proches.
+     *
+     * @param mask   Masque binaire d'entrée.
+     * @param radius Rayon de fermeture en pixels. Si {@code <= 0}, une copie est retournée.
+     * @return Nouveau masque binaire fermé.
+     * @throws IllegalArgumentException si mask est null.
+     */
     public static BinaryMask close(BinaryMask mask, int radius) {
         if (mask == null) {
             throw new IllegalArgumentException("Le masque ne peut pas être null.");
@@ -97,6 +144,15 @@ public final class MorphologyOps {
         return erode(dilate(mask, radius), radius);
     }
 
+    /**
+     * Applique une opération d'ouverture morphologique 2D (érosion suivie d'une dilatation).
+     * Permet d'éliminer le bruit isolé et les fins filaments sans altérer la taille globale de la zone.
+     *
+     * @param mask   Masque binaire d'entrée.
+     * @param radius Rayon d'ouverture en pixels. Si {@code <= 0}, une copie est retournée.
+     * @return Nouveau masque binaire ouvert.
+     * @throws IllegalArgumentException si mask est null.
+     */
     public static BinaryMask open(BinaryMask mask, int radius) {
         if (mask == null) {
             throw new IllegalArgumentException("Le masque ne peut pas être null.");
@@ -107,48 +163,50 @@ public final class MorphologyOps {
         return dilate(erode(mask, radius), radius);
     }
 
+    /**
+     * Extrait et conserve uniquement la composante 4-connexe de plus grande superficie dans le masque.
+     * Toutes les composantes secondaires disjointes ainsi que les artefacts isolés sont éliminés.
+     *
+     * @param mask Masque binaire d'origine.
+     * @return Nouveau masque binaire ne contenant que la plus grande composante connexe.
+     * @throws IllegalArgumentException si mask est null.
+     */
     public static BinaryMask keepLargestComponent(BinaryMask mask) {
         if (mask == null) {
             throw new IllegalArgumentException("Le masque ne peut pas être null.");
         }
+
+        int seedIdx = findLargestComponentSeed(mask);
+        int w = mask.getWidth();
+        int h = mask.getHeight();
+        if (seedIdx == -1) {
+            return new BinaryMask(w, h);
+        }
+
+        BinaryMask largest = new BinaryMask(w, h);
+        exploreComponentBfs(mask, new boolean[w * h], seedIdx, largest);
+        return largest;
+    }
+
+    /**
+     * Recherche l'indice linéaire du pixel de départ de la plus grande composante connexe du masque.
+     *
+     * @param mask Masque binaire d'entrée.
+     * @return Indice linéaire du point de départ de la plus grande composante, ou -1 si le masque est vide.
+     */
+    private static int findLargestComponentSeed(BinaryMask mask) {
         int w = mask.getWidth();
         int h = mask.getHeight();
         boolean[] visited = new boolean[w * h];
         int maxComponentSize = 0;
         int maxStartIdx = -1;
 
-        int[] dx = {1, -1, 0, 0};
-        int[] dy = {0, 0, 1, -1};
-
         for (int y = 0; y < h; y++) {
             int rowOffset = y * w;
             for (int x = 0; x < w; x++) {
                 int idx = rowOffset + x;
                 if (mask.get(x, y) && !visited[idx]) {
-                    int size = 0;
-                    Queue<Integer> q = new ArrayDeque<>();
-                    q.offer(idx);
-                    visited[idx] = true;
-
-                    while (!q.isEmpty()) {
-                        int cur = q.poll();
-                        size++;
-                        int cx = cur % w;
-                        int cy = cur / w;
-
-                        for (int i = 0; i < 4; i++) {
-                            int nx = cx + dx[i];
-                            int ny = cy + dy[i];
-                            if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
-                                int nIdx = ny * w + nx;
-                                if (mask.get(nx, ny) && !visited[nIdx]) {
-                                    visited[nIdx] = true;
-                                    q.offer(nIdx);
-                                }
-                            }
-                        }
-                    }
-
+                    int size = exploreComponentBfs(mask, visited, idx, null);
                     if (size > maxComponentSize) {
                         maxComponentSize = size;
                         maxStartIdx = idx;
@@ -157,36 +215,77 @@ public final class MorphologyOps {
             }
         }
 
-        if (maxStartIdx == -1) {
-            return new BinaryMask(w, h);
+        return maxStartIdx;
+    }
+
+    /**
+     * Explore une composante 4-connexe par parcours en largeur (BFS).
+     *
+     * @param mask        Masque source.
+     * @param visited     Tableau des pixels déjà visités.
+     * @param startIdx    Index linéaire du pixel de départ.
+     * @param destination Masque cible où activer les pixels explorés (ou null pour simple comptage).
+     * @return Nombre de pixels appartenant à cette composante.
+     */
+    private static int exploreComponentBfs(BinaryMask mask, boolean[] visited, int startIdx, BinaryMask destination) {
+        int w = mask.getWidth();
+        int h = mask.getHeight();
+        Queue<Integer> queue = new ArrayDeque<>();
+        queue.offer(startIdx);
+        visited[startIdx] = true;
+        if (destination != null) {
+            destination.set(startIdx % w, startIdx / w, true);
         }
 
-        BinaryMask largest = new BinaryMask(w, h);
-        boolean[] inLargest = new boolean[w * h];
-        Queue<Integer> q = new ArrayDeque<>();
-        q.offer(maxStartIdx);
-        inLargest[maxStartIdx] = true;
-        largest.set(maxStartIdx % w, maxStartIdx / w, true);
+        int size = 0;
+        while (!queue.isEmpty()) {
+            int cur = queue.poll();
+            size++;
+            expandNeighbors(mask, visited, cur, queue, destination, w, h);
+        }
+        return size;
+    }
 
-        while (!q.isEmpty()) {
-            int cur = q.poll();
-            int cx = cur % w;
-            int cy = cur / w;
+    /**
+     * Propage l'exploration BFS aux 4 voisins cardinaux immédiats s'ils sont actifs et non visités.
+     *
+     * @param mask        Masque source.
+     * @param visited     Tableau des pixels visités.
+     * @param currentIdx  Index du pixel courant.
+     * @param queue       File BFS.
+     * @param destination Masque cible optionnel à alimenter.
+     * @param w           Largeur du masque.
+     * @param h           Hauteur du masque.
+     */
+    private static void expandNeighbors(BinaryMask mask, boolean[] visited, int currentIdx,
+                                        Queue<Integer> queue, BinaryMask destination, int w, int h) {
+        int cx = currentIdx % w;
+        int cy = currentIdx / w;
 
-            for (int i = 0; i < 4; i++) {
-                int nx = cx + dx[i];
-                int ny = cy + dy[i];
-                if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
-                    int nIdx = ny * w + nx;
-                    if (mask.get(nx, ny) && !inLargest[nIdx]) {
-                        inLargest[nIdx] = true;
-                        largest.set(nx, ny, true);
-                        q.offer(nIdx);
-                    }
+        for (int i = 0; i < 4; i++) {
+            int nx = cx + DX4[i];
+            int ny = cy + DY4[i];
+            int nIdx = ny * w + nx;
+            if (isWithinBounds(nx, ny, w, h) && mask.get(nx, ny) && !visited[nIdx]) {
+                visited[nIdx] = true;
+                queue.offer(nIdx);
+                if (destination != null) {
+                    destination.set(nx, ny, true);
                 }
             }
         }
+    }
 
-        return largest;
+    /**
+     * Vérifie si les coordonnées spécifiées se situent à l'intérieur de la grille de l'image.
+     *
+     * @param x Coordonnée X.
+     * @param y Coordonnée Y.
+     * @param w Largeur.
+     * @param h Hauteur.
+     * @return Vrai si (x, y) est dans [0, w[ et [0, h[.
+     */
+    private static boolean isWithinBounds(int x, int y, int w, int h) {
+        return x >= 0 && x < w && y >= 0 && y < h;
     }
 }

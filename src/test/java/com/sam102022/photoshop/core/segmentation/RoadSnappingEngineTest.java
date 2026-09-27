@@ -45,6 +45,83 @@ class RoadSnappingEngineTest {
     }
 
     @Test
+    @DisplayName("Vérifier que snapCoverage produit des valeurs d'anti-aliasing sur le contour recalé")
+    void testRecalerContourVersAxesRoutiersContinusAvecAntialiasing() {
+        int w = 60;
+        int h = 60;
+
+        BinaryMask roughMask = new BinaryMask(w, h);
+        // Forme en losange oblique
+        for (int y = 15; y <= 45; y++) {
+            for (int x = 15; x <= 45; x++) {
+                if (Math.abs(x - 30) + Math.abs(y - 30) <= 12) {
+                    roughMask.set(x, y, true);
+                }
+            }
+        }
+
+        BinaryMask roads = new BinaryMask(w, h);
+        for (int y = 10; y <= 50; y++) {
+            roads.set(44, y, true);
+        }
+
+        SnappingConfig config = SnappingConfig.builder()
+                .snapDistance(15)
+                .antialiasing(true)
+                .build();
+
+        RoadSnappingEngine engine = new RoadSnappingEngine();
+        com.sam102022.photoshop.core.model.CoverageMask coverage = engine.snapCoverage(roughMask, roads, config);
+
+        int intermediateCount = 0;
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                int val = coverage.get(x, y);
+                if (val > 0 && val < 255) {
+                    intermediateCount++;
+                }
+            }
+        }
+        assertTrue(intermediateCount >= 10, "Le contour recalé avec AA doit comporter de multiples valeurs sub-pixel ]0, 255[");
+    }
+
+    @Test
+    @DisplayName("Vérifier qu'avec anti-aliasing désactivé (false), toutes les valeurs sont strictement 0 ou 255")
+    void testRecalerContourModeAntialiasingDesactive() {
+        int w = 60;
+        int h = 60;
+
+        BinaryMask roughMask = new BinaryMask(w, h);
+        for (int y = 15; y <= 45; y++) {
+            for (int x = 15; x <= 45; x++) {
+                if (Math.abs(x - 30) + Math.abs(y - 30) <= 12) {
+                    roughMask.set(x, y, true);
+                }
+            }
+        }
+
+        BinaryMask roads = new BinaryMask(w, h);
+        for (int y = 10; y <= 50; y++) {
+            roads.set(44, y, true);
+        }
+
+        SnappingConfig config = SnappingConfig.builder()
+                .snapDistance(15)
+                .antialiasing(false)
+                .build();
+
+        RoadSnappingEngine engine = new RoadSnappingEngine();
+        com.sam102022.photoshop.core.model.CoverageMask coverage = engine.snapCoverage(roughMask, roads, config);
+
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                int val = coverage.get(x, y);
+                assertTrue(val == 0 || val == 255, "Sans AA, la couverture doit être strictement binaire (0 ou 255), trouvé: " + val);
+            }
+        }
+    }
+
+    @Test
     @DisplayName("2. Vérifier qu’aucune route candidate ne renvoie le masque initial")
     void testAucuneRouteCandidateRenvoieMasqueInitial() {
         int w = 30;

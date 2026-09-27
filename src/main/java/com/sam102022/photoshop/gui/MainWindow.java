@@ -9,23 +9,36 @@ import com.sam102022.photoshop.core.segmentation.RoadSnappingEngine;
 import com.sam102022.photoshop.io.ImageExporter;
 import com.sam102022.photoshop.io.ImageLoader;
 
-import javax.swing.*;
-import javax.swing.border.EmptyBorder;
+import javax.swing.JCheckBox;
+import javax.swing.JFileChooser;
+import javax.swing.JFrame;
+import javax.swing.JOptionPane;
+import javax.swing.JPanel;
+import javax.swing.JSlider;
+import javax.swing.JSplitPane;
+import javax.swing.SwingWorker;
 import javax.swing.filechooser.FileNameExtensionFilter;
-import java.awt.*;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
-import java.awt.event.MouseMotionAdapter;
+import java.awt.AlphaComposite;
+import java.awt.BorderLayout;
+import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.nio.file.Path;
 import java.util.concurrent.ExecutionException;
 
 /**
- * Interface graphique Swing pour la visualisation et le détourage interactif.
+ * Fenêtre principale de l'interface graphique Swing orchestrant les sous-composants visuels,
+ * le chargement des cartes/calques, le calcul asynchrone du détourage et l'exportation.
  */
 public class MainWindow extends JFrame {
 
+    /**
+     * Résultat intermédiaire complet du calcul de détourage.
+     *
+     * @param image        Image finale détourée au format ARGB.
+     * @param coverageMask Masque de couverture sub-pixel continue.
+     * @param mask         Masque binaire seuillé correspondant.
+     */
     private record ClippingResult(BufferedImage image, CoverageMask coverageMask, BinaryMask mask) {}
 
     private BufferedImage mapImage;
@@ -34,21 +47,15 @@ public class MainWindow extends JFrame {
     private CoverageMask resultCoverage;
     private BinaryMask resultMask;
 
-    private final JLabel mapLabel = new JLabel("Carte : Aucune sélectionnée");
-    private final JLabel maskLabel = new JLabel("Calque : Aucun sélectionné");
-    private final JLabel statusLabel = new JLabel("Prêt");
-
+    private final FileSelectionPanel fileSelectionPanel = new FileSelectionPanel();
     private final ImagePanel previewOriginalPanel = new ImagePanel("Aperçu Original (Carte + Masque)");
     private final ImagePanel previewResultPanel = new ImagePanel("Résultat Détouré (Transparence)", true);
+    private final ControlsPanel controlsPanel = new ControlsPanel();
+    private final StatusBar statusBar = new StatusBar();
 
-    private final JSlider snapDistanceSlider = new JSlider(5, 100, 40);
-    private final JSlider roadSensitivitySlider = new JSlider(5, 20, 10);
-    private final JSlider smoothSlider = new JSlider(0, 5, 1);
-    private final JCheckBox antialiasingCheckbox = new JCheckBox("Anti-aliasing", true);
-
-    private final JButton clipButton = new JButton("Détourer");
-    private final JButton exportButton = new JButton("Exporter...");
-
+    /**
+     * Initialise la fenêtre principale, positionne les sous-composants et connecte les gestionnaires d'événements.
+     */
     public MainWindow() {
         setTitle("Photoshop - Détourage de Carte Google Maps");
         setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
@@ -56,108 +63,74 @@ public class MainWindow extends JFrame {
         setLocationRelativeTo(null);
 
         initUi();
+        initEventHandlers();
     }
 
+    /**
+     * Configure l'agencement BorderLayout et intègre les sous-composants modulaires.
+     */
     private void initUi() {
         setLayout(new BorderLayout());
 
-        // 1. Panneau Supérieur : Sélecteurs de Fichiers
-        JPanel topPanel = new JPanel(new GridLayout(2, 1, 5, 5));
-        topPanel.setBorder(new EmptyBorder(10, 10, 10, 10));
+        // 1. Panneau Supérieur : Sélecteurs de fichiers
+        add(fileSelectionPanel, BorderLayout.NORTH);
 
-        JPanel mapRow = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        JButton loadMapBtn = new JButton("Parcourir Carte...");
-        loadMapBtn.addActionListener(e -> chooseMapFile());
-        mapRow.add(loadMapBtn);
-        mapRow.add(mapLabel);
-
-        JPanel maskRow = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        JButton loadMaskBtn = new JButton("Parcourir Calque...");
-        loadMaskBtn.addActionListener(e -> chooseMaskFile());
-        maskRow.add(loadMaskBtn);
-        maskRow.add(maskLabel);
-
-        topPanel.add(mapRow);
-        topPanel.add(maskRow);
-        add(topPanel, BorderLayout.NORTH);
-
-        // 2. Panneau Central : Affichage Avant / Après en Split
+        // 2. Panneau Central : Affichage Avant / Après en panneau divisé
         JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, previewOriginalPanel, previewResultPanel);
         splitPane.setResizeWeight(0.5);
         add(splitPane, BorderLayout.CENTER);
 
-        // 3. Panneau Inférieur : Commandes, Sliders et Barre d'État
-        JPanel bottomPanel = new JPanel(new BorderLayout());
-        JPanel controlsPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 15, 10));
-
-        snapDistanceSlider.setPaintTicks(true);
-        snapDistanceSlider.setMajorTickSpacing(25);
-        controlsPanel.add(createSliderBox("Distance Snap (px):", snapDistanceSlider));
-
-        roadSensitivitySlider.setPaintTicks(true);
-        roadSensitivitySlider.setMajorTickSpacing(5);
-        controlsPanel.add(createSliderBox("Sensibilité Routes (x0.1):", roadSensitivitySlider));
-
-        smoothSlider.setPaintTicks(true);
-        smoothSlider.setMajorTickSpacing(1);
-        controlsPanel.add(createSliderBox("Lissage Bords (px):", smoothSlider));
-        controlsPanel.add(antialiasingCheckbox);
-
-        clipButton.setFont(new Font("SansSerif", Font.BOLD, 13));
-        clipButton.addActionListener(e -> runClipping());
-        controlsPanel.add(clipButton);
-
-        exportButton.setEnabled(false);
-        exportButton.addActionListener(e -> exportResult());
-        controlsPanel.add(exportButton);
-
-        bottomPanel.add(controlsPanel, BorderLayout.CENTER);
-
-        JPanel statusBar = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        statusBar.setBorder(BorderFactory.createEtchedBorder());
-        statusBar.add(statusLabel);
-        bottomPanel.add(statusBar, BorderLayout.SOUTH);
-
-        add(bottomPanel, BorderLayout.SOUTH);
+        // 3. Panneau Inférieur : Commandes et Barre d'état
+        JPanel bottomContainer = new JPanel(new BorderLayout());
+        bottomContainer.add(controlsPanel, BorderLayout.CENTER);
+        bottomContainer.add(statusBar, BorderLayout.SOUTH);
+        add(bottomContainer, BorderLayout.SOUTH);
     }
 
-    private JPanel createSliderBox(String title, JSlider slider) {
-        JPanel panel = new JPanel(new BorderLayout());
-        panel.add(new JLabel(title), BorderLayout.NORTH);
-        panel.add(slider, BorderLayout.CENTER);
-        return panel;
+    /**
+     * Connecte les rappels d'événements des sous-composants aux actions métier de la fenêtre.
+     */
+    private void initEventHandlers() {
+        fileSelectionPanel.setOnMapFileSelected(this::loadMapFile);
+        fileSelectionPanel.setOnMaskFileSelected(this::loadMaskFile);
+
+        controlsPanel.setClipAction(this::runClipping);
+        controlsPanel.setExportAction(this::exportResult);
     }
 
-    private void chooseMapFile() {
-        JFileChooser chooser = new JFileChooser();
-        chooser.setFileFilter(new FileNameExtensionFilter("Images (*.png, *.jpg, *.jpeg)", "png", "jpg", "jpeg"));
-        if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
-            try {
-                File file = chooser.getSelectedFile();
-                mapImage = ImageLoader.load(file.toPath());
-                mapLabel.setText(String.format("Carte : %s (%dx%d)", file.getName(), mapImage.getWidth(), mapImage.getHeight()));
-                updateOriginalPreview();
-            } catch (Exception ex) {
-                JOptionPane.showMessageDialog(this, "Erreur de chargement : " + ex.getMessage(), "Erreur", JOptionPane.ERROR_MESSAGE);
-            }
+    /**
+     * Charge une image de carte depuis un fichier sélectionné par l'utilisateur.
+     *
+     * @param file Fichier image de la carte.
+     */
+    private void loadMapFile(File file) {
+        try {
+            mapImage = ImageLoader.load(file.toPath());
+            fileSelectionPanel.setMapLabelText(String.format("Carte : %s (%dx%d)", file.getName(), mapImage.getWidth(), mapImage.getHeight()));
+            updateOriginalPreview();
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this, "Erreur de chargement : " + ex.getMessage(), "Erreur", JOptionPane.ERROR_MESSAGE);
         }
     }
 
-    private void chooseMaskFile() {
-        JFileChooser chooser = new JFileChooser();
-        chooser.setFileFilter(new FileNameExtensionFilter("Images (*.png, *.jpg, *.jpeg)", "png", "jpg", "jpeg"));
-        if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
-            try {
-                File file = chooser.getSelectedFile();
-                maskImage = ImageLoader.load(file.toPath());
-                maskLabel.setText(String.format("Calque : %s (%dx%d)", file.getName(), maskImage.getWidth(), maskImage.getHeight()));
-                updateOriginalPreview();
-            } catch (Exception ex) {
-                JOptionPane.showMessageDialog(this, "Erreur de chargement : " + ex.getMessage(), "Erreur", JOptionPane.ERROR_MESSAGE);
-            }
+    /**
+     * Charge une image de calque depuis un fichier sélectionné par l'utilisateur.
+     *
+     * @param file Fichier image du calque.
+     */
+    private void loadMaskFile(File file) {
+        try {
+            maskImage = ImageLoader.load(file.toPath());
+            fileSelectionPanel.setMaskLabelText(String.format("Calque : %s (%dx%d)", file.getName(), maskImage.getWidth(), maskImage.getHeight()));
+            updateOriginalPreview();
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this, "Erreur de chargement : " + ex.getMessage(), "Erreur", JOptionPane.ERROR_MESSAGE);
         }
     }
 
+    /**
+     * Met à jour l'aperçu composite original en superposant le calque sur la carte avec transparence.
+     */
     private void updateOriginalPreview() {
         if (mapImage == null) return;
         if (maskImage == null) {
@@ -181,6 +154,9 @@ public class MainWindow extends JFrame {
         previewOriginalPanel.setImage(composite);
     }
 
+    /**
+     * Lance le traitement asynchrone de détourage via un {@link SwingWorker}.
+     */
     private void runClipping() {
         if (mapImage == null || maskImage == null) {
             JOptionPane.showMessageDialog(this, "Veuillez charger une carte ET un calque.", "Attention", JOptionPane.WARNING_MESSAGE);
@@ -194,22 +170,11 @@ public class MainWindow extends JFrame {
             return;
         }
 
-        clipButton.setEnabled(false);
-        exportButton.setEnabled(false);
-        statusLabel.setText("Détourage en cours...");
+        controlsPanel.setClipEnabled(false);
+        controlsPanel.setExportEnabled(false);
+        statusBar.setMessage("Détourage en cours...");
 
-        int snapDist = snapDistanceSlider.getValue();
-        float sensitivity = roadSensitivitySlider.getValue() / 10.0f;
-        int smooth = smoothSlider.getValue();
-        boolean antialiasing = antialiasingCheckbox.isSelected();
-
-        SnappingConfig config = SnappingConfig.builder()
-                .snapDistance(snapDist)
-                .roadSensitivity(sensitivity)
-                .smoothRadius(smooth)
-                .antialiasing(antialiasing)
-                .build();
-
+        SnappingConfig config = controlsPanel.buildConfig();
         long startTime = System.currentTimeMillis();
 
         SwingWorker<ClippingResult, Void> worker = new SwingWorker<>() {
@@ -237,15 +202,15 @@ public class MainWindow extends JFrame {
                     resultCoverage = res.coverageMask();
                     resultMask = res.mask();
                     previewResultPanel.setImage(clippedImage);
-                    exportButton.setEnabled(true);
+                    controlsPanel.setExportEnabled(true);
                     long elapsed = System.currentTimeMillis() - startTime;
-                    statusLabel.setText(String.format("Détourage terminé en %d ms (Pixels détourés : %d)", elapsed, resultMask.countActivePixels()));
+                    statusBar.setMessage(String.format("Détourage terminé en %d ms (Pixels détourés : %d)", elapsed, resultMask.countActivePixels()));
                 } catch (InterruptedException | ExecutionException ex) {
                     Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
                     JOptionPane.showMessageDialog(MainWindow.this, "Erreur de détourage : " + cause.getMessage(), "Erreur", JOptionPane.ERROR_MESSAGE);
-                    statusLabel.setText("Erreur");
+                    statusBar.setMessage("Erreur");
                 } finally {
-                    clipButton.setEnabled(true);
+                    controlsPanel.setClipEnabled(true);
                 }
             }
         };
@@ -253,6 +218,9 @@ public class MainWindow extends JFrame {
         worker.execute();
     }
 
+    /**
+     * Ouvre une boîte de dialogue pour exporter l'image détourée et son masque de couverture associé.
+     */
     private void exportResult() {
         if (clippedImage == null || resultCoverage == null || resultMask == null) return;
 
@@ -264,7 +232,7 @@ public class MainWindow extends JFrame {
                 Path outPath = chooser.getSelectedFile().toPath();
                 ImageExporter.savePng(clippedImage, outPath);
 
-                // Sauvegarder également le masque associé
+                // Sauvegarder également le masque associé en niveaux de gris sub-pixel
                 Path maskPath = outPath.resolveSibling("mask_" + outPath.getFileName());
                 ImageExporter.savePng(ImageExporter.createCoverageMaskImage(resultCoverage), maskPath);
 
@@ -276,183 +244,102 @@ public class MainWindow extends JFrame {
     }
 
     /**
-     * Panneau d'affichage d'image avec fond en damier transparent, lissage bilinéaire,
-     * zoom interactif à la molette de souris et déplacement par glisser-déposer.
+     * Accesseur au composant de case à cocher anti-aliasing pour les tests.
+     *
+     * @return Case à cocher anti-aliasing.
      */
-    private static class ImagePanel extends JPanel {
-        private final String title;
-        private final boolean showCheckerboard;
-        private BufferedImage image;
+    JCheckBox getAntialiasingCheckbox() {
+        return controlsPanel.getAntialiasingCheckbox();
+    }
 
-        private double zoomFactor = 1.0;
-        private double panX = 0;
-        private double panY = 0;
-        private Point dragStart = null;
+    /**
+     * Accesseur au curseur de lissage pour les tests.
+     *
+     * @return Curseur de lissage.
+     */
+    JSlider getSmoothSlider() {
+        return controlsPanel.getSmoothSlider();
+    }
 
-        /**
-         * Constructeur sans damier de fond.
-         *
-         * @param title Titre du panneau.
-         */
-        public ImagePanel(String title) {
-            this(title, false);
-        }
+    /**
+     * Définit directement les images pour les tests unitaires et d'intégration.
+     *
+     * @param map  Image de carte.
+     * @param mask Image de calque.
+     */
+    void setTestImages(BufferedImage map, BufferedImage mask) {
+        this.mapImage = map;
+        this.maskImage = mask;
+        updateOriginalPreview();
+    }
 
-        /**
-         * Constructeur avec option de damier de fond pour la transparence.
-         *
-         * @param title            Titre du panneau.
-         * @param showCheckerboard Vrai pour afficher un damier blanc/gris clair sous l'image.
-         */
-        public ImagePanel(String title, boolean showCheckerboard) {
-            this.title = title;
-            this.showCheckerboard = showCheckerboard;
-            setBorder(BorderFactory.createTitledBorder(title));
+    /**
+     * Déclenche l'action de détourage pour les tests.
+     */
+    void triggerClipping() {
+        runClipping();
+    }
 
-            addMouseWheelListener(e -> {
-                if (image == null) return;
-                double oldZoom = zoomFactor;
-                if (e.getWheelRotation() < 0) {
-                    zoomFactor = Math.min(25.0, zoomFactor * 1.25);
-                } else if (e.getWheelRotation() > 0) {
-                    zoomFactor = Math.max(1.0, zoomFactor / 1.25);
-                }
-                if (zoomFactor == 1.0) {
-                    panX = 0;
-                    panY = 0;
-                } else {
-                    double factorChange = zoomFactor / oldZoom;
-                    Point p = e.getPoint();
-                    panX = p.x - factorChange * (p.x - panX);
-                    panY = p.y - factorChange * (p.y - panY);
-                }
-                repaint();
-            });
+    /**
+     * Accesseur au résultat détouré pour les tests.
+     *
+     * @return Image détourée ou null.
+     */
+    BufferedImage getClippedImage() {
+        return clippedImage;
+    }
 
-            addMouseListener(new MouseAdapter() {
-                @Override
-                public void mousePressed(MouseEvent e) {
-                    if (zoomFactor > 1.0) {
-                        dragStart = e.getPoint();
-                    }
-                }
+    /**
+     * Accesseur au masque de couverture résultant pour les tests.
+     *
+     * @return Masque de couverture ou null.
+     */
+    CoverageMask getResultCoverage() {
+        return resultCoverage;
+    }
 
-                @Override
-                public void mouseReleased(MouseEvent e) {
-                    dragStart = null;
-                }
+    /**
+     * Accesseur au panneau de visualisation original pour les tests.
+     *
+     * @return Panneau d'aperçu original.
+     */
+    ImagePanel getPreviewOriginalPanel() {
+        return previewOriginalPanel;
+    }
 
-                @Override
-                public void mouseClicked(MouseEvent e) {
-                    if (e.getClickCount() == 2 || SwingUtilities.isRightMouseButton(e)) {
-                        zoomFactor = 1.0;
-                        panX = 0;
-                        panY = 0;
-                        repaint();
-                    }
-                }
-            });
+    /**
+     * Accesseur au panneau de visualisation du résultat pour les tests.
+     *
+     * @return Panneau d'aperçu résultat.
+     */
+    ImagePanel getPreviewResultPanel() {
+        return previewResultPanel;
+    }
 
-            addMouseMotionListener(new MouseMotionAdapter() {
-                @Override
-                public void mouseDragged(MouseEvent e) {
-                    if (dragStart != null && zoomFactor > 1.0) {
-                        panX += e.getX() - dragStart.x;
-                        panY += e.getY() - dragStart.y;
-                        dragStart = e.getPoint();
-                        repaint();
-                    }
-                }
-            });
-        }
+    /**
+     * Accesseur au panneau de sélection de fichiers pour les tests.
+     *
+     * @return Panneau de sélection de fichiers.
+     */
+    FileSelectionPanel getFileSelectionPanel() {
+        return fileSelectionPanel;
+    }
 
-        /**
-         * Définit l'image à afficher et réinitialise le zoom.
-         *
-         * @param image Nouvelle image ou null.
-         */
-        public void setImage(BufferedImage image) {
-            this.image = image;
-            this.zoomFactor = 1.0;
-            this.panX = 0;
-            this.panY = 0;
-            repaint();
-        }
+    /**
+     * Accesseur au panneau de commandes pour les tests.
+     *
+     * @return Panneau de commandes.
+     */
+    ControlsPanel getControlsPanel() {
+        return controlsPanel;
+    }
 
-        @Override
-        protected void paintComponent(Graphics g) {
-            super.paintComponent(g);
-            int w = getWidth();
-            int h = getHeight();
-
-            if (showCheckerboard) {
-                drawCheckerboard(g, w, h);
-            }
-
-            Insets insets = getInsets();
-            int availW = w - insets.left - insets.right;
-            int availH = h - insets.top - insets.bottom;
-            if (availW <= 0 || availH <= 0) {
-                return;
-            }
-
-            if (image != null) {
-                Graphics2D g2d = (Graphics2D) g.create();
-                try {
-                    g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-                    g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-
-                    double baseScale = Math.min((double) availW / image.getWidth(), (double) availH / image.getHeight());
-                    double totalScale = baseScale * zoomFactor;
-
-                    int baseW = Math.max(1, (int) (image.getWidth() * baseScale));
-                    int baseH = Math.max(1, (int) (image.getHeight() * baseScale));
-                    int baseX = insets.left + (availW - baseW) / 2;
-                    int baseY = insets.top + (availH - baseH) / 2;
-
-                    if (zoomFactor == 1.0) {
-                        g2d.drawImage(image, baseX, baseY, baseW, baseH, null);
-                    } else {
-                        g2d.clipRect(insets.left, insets.top, availW, availH);
-                        int drawW = (int) Math.round(image.getWidth() * totalScale);
-                        int drawH = (int) Math.round(image.getHeight() * totalScale);
-                        int drawX = (int) Math.round(baseX + panX);
-                        int drawY = (int) Math.round(baseY + panY);
-                        g2d.drawImage(image, drawX, drawY, drawW, drawH, null);
-
-                        // Afficher l'indicateur de zoom
-                        String zoomText = String.format("Zoom: %d%%", (int) Math.round(zoomFactor * 100));
-                        g2d.setClip(null);
-                        g2d.setColor(new Color(0, 0, 0, 160));
-                        g2d.fillRoundRect(w - insets.right - 90, insets.top + 10, 80, 24, 8, 8);
-                        g2d.setColor(Color.WHITE);
-                        g2d.setFont(new Font("SansSerif", Font.BOLD, 11));
-                        g2d.drawString(zoomText, w - insets.right - 80, insets.top + 26);
-                    }
-                } finally {
-                    g2d.dispose();
-                }
-            } else {
-                g.setColor(Color.GRAY);
-                g.drawString("Aucune image", Math.max(10, w / 2 - 40), Math.max(20, h / 2));
-            }
-        }
-
-        /**
-         * Dessine le fond en damier pour signaler visuellement la transparence ARGB.
-         *
-         * @param g Contexte graphique.
-         * @param w Largeur de la zone.
-         * @param h Hauteur de la zone.
-         */
-        private void drawCheckerboard(Graphics g, int w, int h) {
-            int cellSize = 12;
-            for (int y = 0; y < h; y += cellSize) {
-                for (int x = 0; x < w; x += cellSize) {
-                    g.setColor(((x / cellSize) + (y / cellSize)) % 2 == 0 ? new Color(220, 220, 220) : Color.WHITE);
-                    g.fillRect(x, y, cellSize, cellSize);
-                }
-            }
-        }
+    /**
+     * Accesseur à la barre d'état pour les tests.
+     *
+     * @return Barre d'état.
+     */
+    StatusBar getStatusBar() {
+        return statusBar;
     }
 }

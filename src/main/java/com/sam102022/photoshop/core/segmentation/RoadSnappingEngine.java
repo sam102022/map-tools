@@ -12,9 +12,18 @@ import java.awt.Point;
 import java.util.List;
 
 /**
- * Moteur de recalage géométrique : extrait le contour extérieur du masque,
- * le simplifie, l'aimante sur les candidats routiers proches et reconstruit
- * le masque polygonal final tout en préservant le noyau intérieur.
+ * Moteur de recalage géodésique sur les axes routiers et de vectorisation du masque cartographique.
+ * <p>
+ * Ce pipeline orchestre :
+ * <ol>
+ *   <li>L'unification morphologique des sous-parcelles disjointes (selon {@link SnappingConfig#closingRadius()}).</li>
+ *   <li>L'extraction du contour extérieur fermé via l'algorithme de Moore ({@link ContourExtractor}).</li>
+ *   <li>La simplification polygonale Ramer-Douglas-Peucker ({@link ContourSimplifier}) pour supprimer les micro-escaliers raster.</li>
+ *   <li>L'aimantation géodésique des sommets vers le bord extérieur des routes candidates ({@link RoadSnapper}).</li>
+ *   <li>La reconstruction vectorielle anti-aliasée sub-pixel avec suréchantillonnage ({@link PolygonBuilder}).</li>
+ *   <li>La préservation du noyau intérieur profond du masque d'origine.</li>
+ * </ol>
+ * </p>
  */
 public class RoadSnappingEngine {
     private final ContourExtractor contourExtractor = new ContourExtractor();
@@ -23,20 +32,45 @@ public class RoadSnappingEngine {
     private final PolygonBuilder polygonBuilder = new PolygonBuilder();
 
     /**
-     * API de compatibilité binaire. Les couvertures partielles sont supprimées au seuil 128.
-     * Pour le rendu anti-aliasé, appeler {@link #snapCoverage(BinaryMask, BinaryMask, SnappingConfig)}.
+     * Exécute le recalage géodésique et retourne un masque binaire dur seuillé à 128 (compatibilité historique).
+     *
+     * @param roughGreenMask Masque initial grossier (calque vert ou tracé utilisateur).
+     * @param roadCandidates Masque binaire des axes routiers détectés sur la carte.
+     * @param config         Configuration des paramètres de recalage et de sensibilité.
+     * @return Masque binaire final seuillé à 128.
+     * @deprecated Préférer {@link #snapCoverage(BinaryMask, BinaryMask, SnappingConfig)} pour conserver l'anti-aliasing sub-pixel.
      */
     @Deprecated(forRemoval = false)
     public BinaryMask snap(BinaryMask roughGreenMask, BinaryMask roadCandidates, SnappingConfig config) {
         return snapBinary(roughGreenMask, roadCandidates, config);
     }
 
-    /** Retourne explicitement le résultat binaire seuillé à 128. */
+    /**
+     * Exécute le recalage géodésique et retourne explicitement un masque binaire sans nuances sub-pixel.
+     *
+     * @param roughGreenMask Masque initial grossier.
+     * @param roadCandidates Masque binaire des axes routiers détectés.
+     * @param config         Configuration des paramètres de recalage.
+     * @return Masque binaire où les pixels de couverture >= 128 sont activés.
+     * @throws IllegalArgumentException si un des arguments est null ou si les dimensions sont incompatibles.
+     */
     public BinaryMask snapBinary(BinaryMask roughGreenMask, BinaryMask roadCandidates, SnappingConfig config) {
         return snapCoverage(roughGreenMask, roadCandidates, config).toBinaryMask(128);
     }
 
-    /** Retourne la couverture continue à utiliser pour rendre l'image anti-aliasée. */
+    /**
+     * Exécute le pipeline complet de recalage géodésique et produit un masque de couverture continue [0..255].
+     * <p>
+     * Conserve les fractions de pixels anti-aliasées sur la frontière recalée ou sur le contour initial
+     * si aucune route n'est candidate ou si le contour n'a pas bougé.
+     * </p>
+     *
+     * @param roughGreenMask Masque initial grossier issu de l'extraction de couleur ou de niveau de gris.
+     * @param roadCandidates Masque binaire des axes routiers candidats issus de {@link com.sam102022.photoshop.core.detection.RoadDetector}.
+     * @param config         Configuration définissant la tolérance de recalage, l'anti-aliasing et les rayons de morphologie.
+     * @return Masque de couverture continue [0..255] prêt pour le détourage ARGB fluide.
+     * @throws IllegalArgumentException si un des arguments est null ou si les dimensions sont incompatibles.
+     */
     public CoverageMask snapCoverage(BinaryMask roughGreenMask, BinaryMask roadCandidates, SnappingConfig config) {
         if (roughGreenMask == null || roadCandidates == null || config == null) {
             throw new IllegalArgumentException("Les arguments du moteur de recalage ne peuvent pas être null.");
@@ -93,6 +127,14 @@ public class RoadSnappingEngine {
         return rasterizeAndPreserveCore(roughGreenMask, adjustedContour, config.antialiasing());
     }
 
+    /**
+     * Rasterise le contour polygonal en couverture continue et sécurise le noyau intérieur contre toute perte de matière.
+     *
+     * @param original     Masque binaire d'origine.
+     * @param contour      Liste ordonnée des sommets du polygone (recalé ou simplifié).
+     * @param antialiasing Vrai pour activer le suréchantillonnage et l'anti-aliasing sub-pixel.
+     * @return Masque de couverture combiné.
+     */
     private CoverageMask rasterizeAndPreserveCore(BinaryMask original, List<Point> contour, boolean antialiasing) {
         CoverageMask coverage = polygonBuilder.rasterizePixelCenterContour(
                 original.getWidth(), original.getHeight(), contour, antialiasing);
