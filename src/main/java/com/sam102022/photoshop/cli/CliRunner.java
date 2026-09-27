@@ -77,7 +77,10 @@ public final class CliRunner {
 
             System.out.println("-> Création et sauvegarde des exports PNG...");
             BufferedImage clippedImage = ImageExporter.createClippedImage(mapImg, coverageMask, config.smoothRadius());
-            BufferedImage maskResultImg = ImageExporter.createMaskImage(snappedMask);
+            // Keep partial edge coverage in the exported mask so the AA result
+            // can be inspected directly; the thresholded binary mask remains
+            // available above for pixel counts and binary workflows.
+            BufferedImage maskResultImg = ImageExporter.createCoverageMaskImage(coverageMask);
 
             Path outPath = Paths.get(outputPathStr);
             Path maskOutPath = Paths.get(maskOutputPathStr);
@@ -176,7 +179,7 @@ public final class CliRunner {
         out.println();
         out.println("Options facultatives :");
         out.println("  --output <path>           Fichier PNG détouré final (défaut: clipped_output.png)");
-        out.println("  --mask-out <path>         Fichier PNG du masque affiné (défaut: mask_output.png)");
+        out.println("  --mask-out <path>         Masque PNG en niveaux de gris avec couverture AA (défaut: mask_output.png)");
         out.println("  --snap-distance <int>     Portée maximale d'ajustement en pixels (défaut: 40)");
         out.println("  --road-sensitivity <flt>  Sensibilité détection routes 0.5-2.0 (défaut: 1.0)");
         out.println("  --smooth <int>            Rayon de lissage des bords (défaut: 1)");

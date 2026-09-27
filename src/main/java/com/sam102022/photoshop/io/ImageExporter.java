@@ -9,7 +9,6 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Arrays;
 
 /**
  * Export des images détourées en PNG transparent (ARGB) avec lissage progressif et export des masques.
@@ -19,11 +18,27 @@ public final class ImageExporter {
     private ImageExporter() {
     }
 
+    /** Compatibilité historique : un masque binaire ne contient pas de couverture sub-pixel. */
+    @Deprecated(forRemoval = false)
     public static BufferedImage createClippedImage(BufferedImage mapImage, BinaryMask mask, int smoothRadius) {
+        return createClippedImageBinary(mapImage, mask, smoothRadius);
+    }
+
+    /** Crée une image détourée à partir d'un masque binaire ; préférer la surcharge CoverageMask pour l'anti-aliasing. */
+    public static BufferedImage createClippedImageBinary(BufferedImage mapImage, BinaryMask mask, int smoothRadius) {
         if (mask == null) throw new IllegalArgumentException("mask ne peut pas être null.");
         return createClippedImage(mapImage, CoverageMask.fromBinaryMask(mask), smoothRadius);
     }
 
+    /**
+     * Crée une image détourée ARGB à partir d'un masque de couverture continue [0..255]
+     * avec application éventuelle d'un adoucissement progressif (flou gaussien binomial).
+     *
+     * @param mapImage     Image source de la carte.
+     * @param coverageMask Masque de couverture sub-pixel.
+     * @param smoothRadius Rayon d'adoucissement des bords en pixels (0 pour sub-pixel pur, >= 1 pour progressif).
+     * @return Image détourée avec transparence ARGB fluide sans effet d'escalier.
+     */
     public static BufferedImage createClippedImage(BufferedImage mapImage, CoverageMask coverageMask, int smoothRadius) {
         if (mapImage == null || coverageMask == null) {
             throw new IllegalArgumentException("mapImage et coverageMask ne peuvent pas être null.");
@@ -34,22 +49,16 @@ public final class ImageExporter {
 
         int w = mapImage.getWidth();
         int h = mapImage.getHeight();
-        int featherRadius = smoothRadius > 0 ? Math.min(smoothRadius, Math.max(w, h)) : 0;
         BufferedImage clipped = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
-        int[] distance = featherRadius > 0
-                ? distanceFromCoverageBoundary(coverageMask.toBinaryMask(128))
-                : null;
+
+        CoverageMask effectiveMask = smoothRadius > 0
+                ? smoothCoverage(coverageMask, smoothRadius)
+                : coverageMask;
 
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
-                int coverage = coverageMask.get(x, y);
+                int coverage = effectiveMask.get(x, y);
                 if (coverage == 0) continue;
-                if (distance != null) {
-                    int d = distance[y * w + x];
-                    if (d == Integer.MAX_VALUE) d = 0; // couverture partielle sous le seuil binaire
-                    long denominator = featherRadius + 1L;
-                    coverage = (int) ((coverage * (Math.min(d, featherRadius) + 1L) + denominator / 2) / denominator);
-                }
                 int sourcePixel = mapImage.getRGB(x, y);
                 int sourceAlpha = (sourcePixel >>> 24) & 0xFF;
                 int finalAlpha = (sourceAlpha * coverage + 127) / 255;
@@ -62,57 +71,83 @@ public final class ImageExporter {
         return clipped;
     }
 
-    /** Approxime la distance intérieure au bord avec deux passes chamfer 8-connexes. */
-    private static int[] distanceFromCoverageBoundary(BinaryMask mask) {
-        int w = mask.getWidth(), h = mask.getHeight(), size = w * h;
-        int[] distance = new int[size];
-        Arrays.fill(distance, Integer.MAX_VALUE);
+    /**
+     * Applique un filtre d'adoucissement progressif séparable binomial (approximation gaussienne)
+     * sur les valeurs de couverture [0..255].
+     *
+     * @param mask   Masque de couverture source.
+     * @param radius Rayon du filtre en pixels (>= 1).
+     * @return Nouveau masque de couverture adouci.
+     */
+    public static CoverageMask smoothCoverage(CoverageMask mask, int radius) {
+        if (mask == null) {
+            throw new IllegalArgumentException("mask ne peut pas être null.");
+        }
+        if (radius <= 0) {
+            return mask;
+        }
+
+        int w = mask.getWidth();
+        int h = mask.getHeight();
+        int effectiveRadius = Math.min(radius, 5); // Limiter à 5 pour garantir la stabilité du noyau binomial
+
+        int kernelSize = 2 * effectiveRadius + 1;
+        int[] kernel = new int[kernelSize];
+        int n = 2 * effectiveRadius;
+        for (int k = 0; k <= n; k++) {
+            kernel[k] = binomialCoeff(n, k);
+        }
+        int shift = n;
+        int halfSum = 1 << (shift - 1);
+
+        // Passe horizontale
+        int[] hPass = new int[w * h];
         for (int y = 0; y < h; y++) {
+            int rowOffset = y * w;
             for (int x = 0; x < w; x++) {
-                if (!mask.get(x, y)) continue;
-                boolean boundary = false;
-                for (int dy = -1; dy <= 1 && !boundary; dy++) {
-                    for (int dx = -1; dx <= 1; dx++) {
-                        if ((dx != 0 || dy != 0) && !mask.get(x + dx, y + dy)) {
-                            boundary = true;
-                            break;
-                        }
-                    }
+                int sum = 0;
+                for (int k = -effectiveRadius; k <= effectiveRadius; k++) {
+                    int sx = Math.max(0, Math.min(w - 1, x + k));
+                    sum += mask.get(sx, y) * kernel[k + effectiveRadius];
                 }
-                if (boundary) distance[y * w + x] = 0;
+                hPass[rowOffset + x] = (sum + halfSum) >> shift;
             }
         }
+
+        // Passe verticale
+        CoverageMask result = new CoverageMask(w, h);
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
-                int i = y * w + x;
-                if (!mask.get(x, y)) continue;
-                int best = distance[i];
-                best = Math.min(best, neighborDistance(distance, w, h, x - 1, y, 1));
-                best = Math.min(best, neighborDistance(distance, w, h, x, y - 1, 1));
-                best = Math.min(best, neighborDistance(distance, w, h, x - 1, y - 1, 1));
-                best = Math.min(best, neighborDistance(distance, w, h, x + 1, y - 1, 1));
-                distance[i] = best;
+                int sum = 0;
+                for (int k = -effectiveRadius; k <= effectiveRadius; k++) {
+                    int sy = Math.max(0, Math.min(h - 1, y + k));
+                    sum += hPass[sy * w + x] * kernel[k + effectiveRadius];
+                }
+                int finalCov = (sum + halfSum) >> shift;
+                if (finalCov > 0) {
+                    result.set(x, y, finalCov);
+                }
             }
         }
-        for (int y = h - 1; y >= 0; y--) {
-            for (int x = w - 1; x >= 0; x--) {
-                int i = y * w + x;
-                if (!mask.get(x, y)) continue;
-                int best = distance[i];
-                best = Math.min(best, neighborDistance(distance, w, h, x + 1, y, 1));
-                best = Math.min(best, neighborDistance(distance, w, h, x, y + 1, 1));
-                best = Math.min(best, neighborDistance(distance, w, h, x - 1, y + 1, 1));
-                best = Math.min(best, neighborDistance(distance, w, h, x + 1, y + 1, 1));
-                distance[i] = best;
-            }
-        }
-        return distance;
+
+        return result;
     }
 
-    private static int neighborDistance(int[] distance, int width, int height, int x, int y, int cost) {
-        if (x < 0 || x >= width || y < 0 || y >= height) return Integer.MAX_VALUE;
-        int neighbor = distance[y * width + x];
-        return neighbor == Integer.MAX_VALUE ? neighbor : neighbor + cost;
+    /**
+     * Calcule le coefficient binomial C(n, k).
+     *
+     * @param n Ordre total.
+     * @param k Indice d'échantillonnage.
+     * @return Valeur entière du coefficient binomial.
+     */
+    private static int binomialCoeff(int n, int k) {
+        if (k < 0 || k > n) return 0;
+        if (k == 0 || k == n) return 1;
+        long res = 1;
+        for (int i = 1; i <= k; i++) {
+            res = res * (n - i + 1) / i;
+        }
+        return (int) res;
     }
 
     public static BufferedImage createMaskImage(BinaryMask mask) {
@@ -126,6 +161,20 @@ public final class ImageExporter {
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
                 image.setRGB(x, y, mask.get(x, y) ? 0xFFFFFF : 0x000000);
+            }
+        }
+        return image;
+    }
+
+    /** Creates a grayscale PNG mask that preserves fractional edge coverage. */
+    public static BufferedImage createCoverageMaskImage(CoverageMask mask) {
+        if (mask == null) {
+            throw new IllegalArgumentException("mask ne peut pas être null.");
+        }
+        BufferedImage image = new BufferedImage(mask.getWidth(), mask.getHeight(), BufferedImage.TYPE_BYTE_GRAY);
+        for (int y = 0; y < mask.getHeight(); y++) {
+            for (int x = 0; x < mask.getWidth(); x++) {
+                image.getRaster().setSample(x, y, 0, mask.get(x, y));
             }
         }
         return image;

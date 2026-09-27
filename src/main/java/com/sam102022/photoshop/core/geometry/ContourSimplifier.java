@@ -21,7 +21,7 @@ public class ContourSimplifier {
         boolean closed = points.getFirst().equals(points.getLast());
         List<Point> openPoints = new ArrayList<>(points);
         if (closed && openPoints.size() > 1) {
-            openPoints.remove(openPoints.size() - 1);
+            openPoints.removeLast();
         }
 
         if (openPoints.size() < 3) {
@@ -34,9 +34,9 @@ public class ContourSimplifier {
         Point p0 = openPoints.getFirst();
         for (int i = 1; i < openPoints.size(); i++) {
             Point p = openPoints.get(i);
-            double dx = p.x - p0.x;
-            double dy = p.y - p0.y;
-            double distSq = dx * dx + dy * dy;
+            int dx = p.x - p0.x;
+            int dy = p.y - p0.y;
+            int distSq = dx * dx + dy * dy;
             if (distSq > maxDistSq) {
                 maxDistSq = distSq;
                 farthestIdx = i;
@@ -48,7 +48,7 @@ public class ContourSimplifier {
 
         List<Point> result = new ArrayList<>(part1);
         if (part2.size() > 1) {
-            result.remove(result.size() - 1); // Dédupliquer le pivot
+            result.removeLast(); // Dédupliquer le pivot
             result.addAll(part2);
         }
 
@@ -90,7 +90,7 @@ public class ContourSimplifier {
             List<Point> left = rdp(points.subList(0, index + 1), epsilon);
             List<Point> right = rdp(points.subList(index, points.size()), epsilon);
             result.addAll(left);
-            result.remove(result.size() - 1);
+            result.removeLast();
             result.addAll(right);
         } else {
             result.add(start);
@@ -100,11 +100,13 @@ public class ContourSimplifier {
     }
 
     private double perpendicularDistance(Point pt, Point lineStart, Point lineEnd) {
-        double dx = lineEnd.x - lineStart.x;
-        double dy = lineEnd.y - lineStart.y;
-        double lenSq = dx * dx + dy * dy;
+        int dx = lineEnd.x - lineStart.x;
+        int dy = lineEnd.y - lineStart.y;
+        double lenSq = (dx * dx + dy * dy);
         if (lenSq == 0) {
-            return Math.hypot(pt.x - lineStart.x, pt.y - lineStart.y);
+            double x = (pt.x - lineStart.x);
+            double y = (pt.y - lineStart.y);
+            return Math.hypot(x, y);
         }
         double num = Math.abs(dy * pt.x - dx * pt.y + lineEnd.x * lineStart.y - lineEnd.y * lineStart.x);
         return num / Math.sqrt(lenSq);

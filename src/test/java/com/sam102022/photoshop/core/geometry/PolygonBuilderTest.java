@@ -47,4 +47,50 @@ class PolygonBuilderTest {
         assertThrows(IllegalArgumentException.class, () -> builder.rasterize(20, -5, List.of()));
         assertThrows(IllegalArgumentException.class, () -> builder.rasterize(20, 20, null));
     }
+
+    @Test
+    @DisplayName("Rasterisation avec anti-aliasing activé produit des valeurs de couverture sub-pixel intermédiaires")
+    void testRasterizeCoverageAntialiasingOn() {
+        PolygonBuilder builder = new PolygonBuilder();
+        // Triangle oblique
+        List<Point> triangle = List.of(
+                new Point(2, 2),
+                new Point(18, 5),
+                new Point(8, 18),
+                new Point(2, 2)
+        );
+
+        com.sam102022.photoshop.core.model.CoverageMask mask = builder.rasterizeCoverage(25, 25, triangle, true);
+        boolean hasIntermediate = false;
+        for (int y = 0; y < 25; y++) {
+            for (int x = 0; x < 25; x++) {
+                int cov = mask.get(x, y);
+                if (cov > 0 && cov < 255) {
+                    hasIntermediate = true;
+                    break;
+                }
+            }
+        }
+        assertTrue(hasIntermediate, "Des valeurs de couverture strictement comprises entre 0 et 255 doivent être présentes avec AA");
+    }
+
+    @Test
+    @DisplayName("Rasterisation sans anti-aliasing produit exclusivement 0 ou 255")
+    void testRasterizeCoverageAntialiasingOff() {
+        PolygonBuilder builder = new PolygonBuilder();
+        List<Point> triangle = List.of(
+                new Point(2, 2),
+                new Point(18, 5),
+                new Point(8, 18),
+                new Point(2, 2)
+        );
+
+        com.sam102022.photoshop.core.model.CoverageMask mask = builder.rasterizeCoverage(25, 25, triangle, false);
+        for (int y = 0; y < 25; y++) {
+            for (int x = 0; x < 25; x++) {
+                int cov = mask.get(x, y);
+                assertTrue(cov == 0 || cov == 255, "Sans AA, la couverture doit être strictement binaire (0 ou 255), trouvé: " + cov);
+            }
+        }
+    }
 }

@@ -71,13 +71,13 @@ class ImageIoTest {
 
         BufferedImage clipped = ImageExporter.createClippedImage(map, mask, 1);
 
-        // Pixel central (4, 4) situé dans le cœur érodé -> alpha 255
+        // Pixel central (4, 4) situé au cœur -> alpha 255
         int coreAlpha = (clipped.getRGB(4, 4) >> 24) & 0xFF;
         assertEquals(255, coreAlpha);
 
-        // Pixel de bordure (2, 2) situé sur la marge érodée -> alpha 160
+        // Pixel de bordure (2, 2) situé sur le pourtour adouci -> alpha progressif atténué
         int borderAlpha = (clipped.getRGB(2, 2) >> 24) & 0xFF;
-        assertEquals(160, borderAlpha);
+        assertTrue(borderAlpha > 0 && borderAlpha < 255, "L'alpha de bordure doit être progressif");
 
         // Pixel extérieur (0, 0) -> alpha 0
         int outsideAlpha = (clipped.getRGB(0, 0) >> 24) & 0xFF;
