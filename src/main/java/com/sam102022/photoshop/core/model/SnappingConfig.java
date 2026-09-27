@@ -8,8 +8,15 @@ public record SnappingConfig(
         float roadSensitivity,
         int smoothRadius,
         int seedErosionRadius,
-        int closingRadius
+        int closingRadius,
+        boolean antialiasing
 ) {
+    /** Constructeur conservé pour les appels historiques à cinq paramètres. */
+    public SnappingConfig(int snapDistance, float roadSensitivity, int smoothRadius,
+                          int seedErosionRadius, int closingRadius) {
+        this(snapDistance, roadSensitivity, smoothRadius, seedErosionRadius, closingRadius, true);
+    }
+
     public SnappingConfig {
         if (snapDistance <= 0) {
             throw new IllegalArgumentException("snapDistance doit être > 0 : " + snapDistance);
@@ -29,7 +36,7 @@ public record SnappingConfig(
     }
 
     public static SnappingConfig defaults() {
-        return new SnappingConfig(40, 1.0f, 1, 8, 2);
+        return new SnappingConfig(40, 1.0f, 1, 8, 2, true);
     }
 
     public static Builder builder() {
@@ -42,6 +49,7 @@ public record SnappingConfig(
         private int smoothRadius = 1;
         private int seedErosionRadius = 8;
         private int closingRadius = 2;
+        private boolean antialiasing = true;
 
         public Builder snapDistance(int snapDistance) {
             this.snapDistance = snapDistance;
@@ -68,8 +76,13 @@ public record SnappingConfig(
             return this;
         }
 
+        public Builder antialiasing(boolean antialiasing) {
+            this.antialiasing = antialiasing;
+            return this;
+        }
+
         public SnappingConfig build() {
-            return new SnappingConfig(snapDistance, roadSensitivity, smoothRadius, seedErosionRadius, closingRadius);
+            return new SnappingConfig(snapDistance, roadSensitivity, smoothRadius, seedErosionRadius, closingRadius, antialiasing);
         }
     }
 }

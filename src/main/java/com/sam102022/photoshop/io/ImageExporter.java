@@ -1,7 +1,7 @@
 package com.sam102022.photoshop.io;
 
 import com.sam102022.photoshop.core.model.BinaryMask;
-import com.sam102022.photoshop.core.segmentation.MorphologyOps;
+import com.sam102022.photoshop.core.model.CoverageMask;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -9,6 +9,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 
 /**
  * Export des images détourées en PNG transparent (ARGB) avec lissage progressif et export des masques.
@@ -19,51 +20,99 @@ public final class ImageExporter {
     }
 
     public static BufferedImage createClippedImage(BufferedImage mapImage, BinaryMask mask, int smoothRadius) {
-        if (mapImage == null || mask == null) {
-            throw new IllegalArgumentException("mapImage et mask ne peuvent pas être null.");
+        if (mask == null) throw new IllegalArgumentException("mask ne peut pas être null.");
+        return createClippedImage(mapImage, CoverageMask.fromBinaryMask(mask), smoothRadius);
+    }
+
+    public static BufferedImage createClippedImage(BufferedImage mapImage, CoverageMask coverageMask, int smoothRadius) {
+        if (mapImage == null || coverageMask == null) {
+            throw new IllegalArgumentException("mapImage et coverageMask ne peuvent pas être null.");
         }
-        if (mapImage.getWidth() != mask.getWidth() || mapImage.getHeight() != mask.getHeight()) {
-            throw new IllegalArgumentException("Dimensions incompatibles entre mapImage et mask.");
+        if (mapImage.getWidth() != coverageMask.getWidth() || mapImage.getHeight() != coverageMask.getHeight()) {
+            throw new IllegalArgumentException("Dimensions incompatibles entre mapImage et coverageMask.");
         }
 
         int w = mapImage.getWidth();
         int h = mapImage.getHeight();
+        int featherRadius = smoothRadius > 0 ? Math.min(smoothRadius, Math.max(w, h)) : 0;
         BufferedImage clipped = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
-
-        if (smoothRadius <= 0) {
-            for (int y = 0; y < h; y++) {
-                for (int x = 0; x < w; x++) {
-                    if (mask.get(x, y)) {
-                        int rgb = mapImage.getRGB(x, y) & 0x00FFFFFF;
-                        clipped.setRGB(x, y, 0xFF000000 | rgb);
-                    } else {
-                        clipped.setRGB(x, y, 0x00000000);
-                    }
-                }
-            }
-            return clipped;
-        }
-
-        // Lissage de contour : détection des bords intérieurs par érosion
-        BinaryMask coreMask = MorphologyOps.erode(mask, smoothRadius);
+        int[] distance = featherRadius > 0
+                ? distanceFromCoverageBoundary(coverageMask.toBinaryMask(128))
+                : null;
 
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
-                if (!mask.get(x, y)) {
-                    clipped.setRGB(x, y, 0x00000000);
-                } else if (coreMask.get(x, y)) {
-                    int rgb = mapImage.getRGB(x, y) & 0x00FFFFFF;
-                    clipped.setRGB(x, y, 0xFF000000 | rgb);
-                } else {
-                    // Pixel situé sur la bordure : calcul d'un alpha progressif
-                    int rgb = mapImage.getRGB(x, y) & 0x00FFFFFF;
-                    int alpha = 160; // Atténuation anti-escalier sur le pourtour
-                    clipped.setRGB(x, y, (alpha << 24) | rgb);
+                int coverage = coverageMask.get(x, y);
+                if (coverage == 0) continue;
+                if (distance != null) {
+                    int d = distance[y * w + x];
+                    if (d == Integer.MAX_VALUE) d = 0; // couverture partielle sous le seuil binaire
+                    long denominator = featherRadius + 1L;
+                    coverage = (int) ((coverage * (Math.min(d, featherRadius) + 1L) + denominator / 2) / denominator);
+                }
+                int sourcePixel = mapImage.getRGB(x, y);
+                int sourceAlpha = (sourcePixel >>> 24) & 0xFF;
+                int finalAlpha = (sourceAlpha * coverage + 127) / 255;
+                if (finalAlpha != 0) {
+                    clipped.setRGB(x, y, (finalAlpha << 24) | (sourcePixel & 0x00FFFFFF));
                 }
             }
         }
 
         return clipped;
+    }
+
+    /** Approxime la distance intérieure au bord avec deux passes chamfer 8-connexes. */
+    private static int[] distanceFromCoverageBoundary(BinaryMask mask) {
+        int w = mask.getWidth(), h = mask.getHeight(), size = w * h;
+        int[] distance = new int[size];
+        Arrays.fill(distance, Integer.MAX_VALUE);
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                if (!mask.get(x, y)) continue;
+                boolean boundary = false;
+                for (int dy = -1; dy <= 1 && !boundary; dy++) {
+                    for (int dx = -1; dx <= 1; dx++) {
+                        if ((dx != 0 || dy != 0) && !mask.get(x + dx, y + dy)) {
+                            boundary = true;
+                            break;
+                        }
+                    }
+                }
+                if (boundary) distance[y * w + x] = 0;
+            }
+        }
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                int i = y * w + x;
+                if (!mask.get(x, y)) continue;
+                int best = distance[i];
+                best = Math.min(best, neighborDistance(distance, w, h, x - 1, y, 1));
+                best = Math.min(best, neighborDistance(distance, w, h, x, y - 1, 1));
+                best = Math.min(best, neighborDistance(distance, w, h, x - 1, y - 1, 1));
+                best = Math.min(best, neighborDistance(distance, w, h, x + 1, y - 1, 1));
+                distance[i] = best;
+            }
+        }
+        for (int y = h - 1; y >= 0; y--) {
+            for (int x = w - 1; x >= 0; x--) {
+                int i = y * w + x;
+                if (!mask.get(x, y)) continue;
+                int best = distance[i];
+                best = Math.min(best, neighborDistance(distance, w, h, x + 1, y, 1));
+                best = Math.min(best, neighborDistance(distance, w, h, x, y + 1, 1));
+                best = Math.min(best, neighborDistance(distance, w, h, x - 1, y + 1, 1));
+                best = Math.min(best, neighborDistance(distance, w, h, x + 1, y + 1, 1));
+                distance[i] = best;
+            }
+        }
+        return distance;
+    }
+
+    private static int neighborDistance(int[] distance, int width, int height, int x, int y, int cost) {
+        if (x < 0 || x >= width || y < 0 || y >= height) return Integer.MAX_VALUE;
+        int neighbor = distance[y * width + x];
+        return neighbor == Integer.MAX_VALUE ? neighbor : neighbor + cost;
     }
 
     public static BufferedImage createMaskImage(BinaryMask mask) {

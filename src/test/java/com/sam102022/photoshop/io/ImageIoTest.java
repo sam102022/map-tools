@@ -134,7 +134,7 @@ class ImageIoTest {
         BufferedImage wrongSize = new BufferedImage(15, 10, BufferedImage.TYPE_INT_RGB);
 
         assertThrows(IllegalArgumentException.class, () -> ImageExporter.createClippedImage(null, mask, 0));
-        assertThrows(IllegalArgumentException.class, () -> ImageExporter.createClippedImage(img, null, 0));
+        assertThrows(IllegalArgumentException.class, () -> ImageExporter.createClippedImage(img, (BinaryMask) null, 0));
         assertThrows(IllegalArgumentException.class, () -> ImageExporter.createClippedImage(wrongSize, mask, 0));
         assertThrows(IllegalArgumentException.class, () -> ImageExporter.createMaskImage(null));
         assertThrows(IllegalArgumentException.class, () -> ImageExporter.savePng(null, Path.of("test.png")));

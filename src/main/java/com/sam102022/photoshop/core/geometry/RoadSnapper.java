@@ -36,26 +36,43 @@ public class RoadSnapper {
             // L'ordre du contour détermine le côté extérieur de sa normale.
             double nx = (area > 0 ? ty : -ty) / length;
             double ny = (area > 0 ? -tx : tx) / length;
-            Point best = new Point(current);
-            double bestScore = Double.POSITIVE_INFINITY;
+            Point snappedPoint = new Point(current);
+            int runStart = -1;
+            int runEnd = -1;
+            boolean inFirstRoadBand = false;
             int radius = config.snapDistance();
             for (int step = 1; step <= radius; step++) {
                 int x = (int) Math.round(current.x + nx * step);
                 int y = (int) Math.round(current.y + ny * step);
                 if (x < 0 || x >= imageWidth || y < 0 || y >= imageHeight) break;
-                if (!roadCandidates.get(x, y)) continue;
-
-                // Une route doit se prolonger parallèlement au contour ; un pixel isolé
-                // provenant d'un texte ou d'un pictogramme n'est pas un bon point d'accroche.
-                int support = tangentSupport(roadCandidates, x, y, tx / length, ty / length);
-                if (support < 2) continue;
-                double score = step + (5 - support) * 0.75;
-                if (score < bestScore) {
-                    best = new Point(x, y);
-                    bestScore = score;
+                if (roadCandidates.get(x, y)) {
+                    if (inFirstRoadBand) {
+                        runEnd = step;
+                        continue;
+                    }
+                    // Une route doit se prolonger parallèlement au contour ; un pixel isolé
+                    // provenant d'un texte ou d'un pictogramme n'est pas un bon point d'accroche.
+                    if (tangentSupport(roadCandidates, x, y, tx / length, ty / length) >= 2) {
+                        runStart = step;
+                        runEnd = step;
+                        inFirstRoadBand = true;
+                    }
+                } else if (inFirstRoadBand) {
+                    // On a traversé le premier ruban routier continu : ne pas accrocher
+                    // une seconde route située plus loin.
+                    break;
                 }
             }
-            snapped.add(best);
+            if (runStart >= 0) {
+                // Le contour est placé juste après le bord extérieur du ruban, côté
+                // extérieur de la zone. Ainsi la dernière rangée de pixels de chaussée
+                // reste à l'intérieur du masque final.
+                int targetStep = Math.min(runEnd + 1, radius);
+                int targetX = (int) Math.round(current.x + nx * targetStep);
+                int targetY = (int) Math.round(current.y + ny * targetStep);
+                snappedPoint = new Point(targetX, targetY);
+            }
+            snapped.add(snappedPoint);
         }
         return List.copyOf(snapped);
     }

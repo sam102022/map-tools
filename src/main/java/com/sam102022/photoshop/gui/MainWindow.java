@@ -3,6 +3,7 @@ package com.sam102022.photoshop.gui;
 import com.sam102022.photoshop.core.detection.GreenMaskExtractor;
 import com.sam102022.photoshop.core.detection.RoadDetector;
 import com.sam102022.photoshop.core.model.BinaryMask;
+import com.sam102022.photoshop.core.model.CoverageMask;
 import com.sam102022.photoshop.core.model.SnappingConfig;
 import com.sam102022.photoshop.core.segmentation.RoadSnappingEngine;
 import com.sam102022.photoshop.io.ImageExporter;
@@ -22,11 +23,12 @@ import java.util.concurrent.ExecutionException;
  */
 public class MainWindow extends JFrame {
 
-    private record ClippingResult(BufferedImage image, BinaryMask mask) {}
+    private record ClippingResult(BufferedImage image, CoverageMask coverageMask, BinaryMask mask) {}
 
     private BufferedImage mapImage;
     private BufferedImage maskImage;
     private BufferedImage clippedImage;
+    private CoverageMask resultCoverage;
     private BinaryMask resultMask;
 
     private final JLabel mapLabel = new JLabel("Carte : Aucune sélectionnée");
@@ -39,6 +41,7 @@ public class MainWindow extends JFrame {
     private final JSlider snapDistanceSlider = new JSlider(5, 100, 40);
     private final JSlider roadSensitivitySlider = new JSlider(5, 20, 10);
     private final JSlider smoothSlider = new JSlider(0, 5, 1);
+    private final JCheckBox antialiasingCheckbox = new JCheckBox("Anti-aliasing", true);
 
     private final JButton clipButton = new JButton("Détourer");
     private final JButton exportButton = new JButton("Exporter...");
@@ -95,6 +98,7 @@ public class MainWindow extends JFrame {
         smoothSlider.setPaintTicks(true);
         smoothSlider.setMajorTickSpacing(1);
         controlsPanel.add(createSliderBox("Lissage Bords (px):", smoothSlider));
+        controlsPanel.add(antialiasingCheckbox);
 
         clipButton.setFont(new Font("SansSerif", Font.BOLD, 13));
         clipButton.addActionListener(e -> runClipping());
@@ -194,11 +198,13 @@ public class MainWindow extends JFrame {
         int snapDist = snapDistanceSlider.getValue();
         float sensitivity = roadSensitivitySlider.getValue() / 10.0f;
         int smooth = smoothSlider.getValue();
+        boolean antialiasing = antialiasingCheckbox.isSelected();
 
         SnappingConfig config = SnappingConfig.builder()
                 .snapDistance(snapDist)
                 .roadSensitivity(sensitivity)
                 .smoothRadius(smooth)
+                .antialiasing(antialiasing)
                 .build();
 
         long startTime = System.currentTimeMillis();
@@ -210,13 +216,14 @@ public class MainWindow extends JFrame {
                 BinaryMask roughMask = greenExtractor.extract(maskImage);
 
                 RoadDetector roadDetector = new RoadDetector();
-                BinaryMask roadBarrier = roadDetector.detectRoads(mapImage, config);
+                BinaryMask roadCandidates = roadDetector.detectRoads(mapImage, config);
 
                 RoadSnappingEngine engine = new RoadSnappingEngine();
-                BinaryMask computedMask = engine.snap(roughMask, roadBarrier, config);
+                CoverageMask computedCoverage = engine.snapCoverage(roughMask, roadCandidates, config);
+                BinaryMask computedMask = computedCoverage.toBinaryMask(128);
 
-                BufferedImage renderedImage = ImageExporter.createClippedImage(mapImage, computedMask, config.smoothRadius());
-                return new ClippingResult(renderedImage, computedMask);
+                BufferedImage renderedImage = ImageExporter.createClippedImage(mapImage, computedCoverage, config.smoothRadius());
+                return new ClippingResult(renderedImage, computedCoverage, computedMask);
             }
 
             @Override
@@ -224,6 +231,7 @@ public class MainWindow extends JFrame {
                 try {
                     ClippingResult res = get();
                     clippedImage = res.image();
+                    resultCoverage = res.coverageMask();
                     resultMask = res.mask();
                     previewResultPanel.setImage(clippedImage);
                     exportButton.setEnabled(true);
@@ -243,7 +251,7 @@ public class MainWindow extends JFrame {
     }
 
     private void exportResult() {
-        if (clippedImage == null || resultMask == null) return;
+        if (clippedImage == null || resultCoverage == null || resultMask == null) return;
 
         JFileChooser chooser = new JFileChooser();
         chooser.setFileFilter(new FileNameExtensionFilter("Image PNG (*.png)", "png"));
@@ -255,7 +263,7 @@ public class MainWindow extends JFrame {
 
                 // Sauvegarder également le masque associé
                 Path maskPath = outPath.resolveSibling("mask_" + outPath.getFileName());
-                ImageExporter.savePng(ImageExporter.createMaskImage(resultMask), maskPath);
+                ImageExporter.savePng(ImageExporter.createMaskImage(resultCoverage.toBinaryMask(128)), maskPath);
 
                 JOptionPane.showMessageDialog(this, "Images exportées avec succès !", "Succès", JOptionPane.INFORMATION_MESSAGE);
             } catch (Exception ex) {

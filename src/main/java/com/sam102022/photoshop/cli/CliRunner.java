@@ -3,6 +3,7 @@ package com.sam102022.photoshop.cli;
 import com.sam102022.photoshop.core.detection.GreenMaskExtractor;
 import com.sam102022.photoshop.core.detection.RoadDetector;
 import com.sam102022.photoshop.core.model.BinaryMask;
+import com.sam102022.photoshop.core.model.CoverageMask;
 import com.sam102022.photoshop.core.model.SnappingConfig;
 import com.sam102022.photoshop.core.segmentation.RoadSnappingEngine;
 import com.sam102022.photoshop.io.ImageExporter;
@@ -36,11 +37,13 @@ public final class CliRunner {
             int snapDistance = getIntOption(args, "--snap-distance", 40);
             float roadSensitivity = getFloatOption(args, "--road-sensitivity", 1.0f);
             int smoothRadius = getIntOption(args, "--smooth", 1);
+            boolean antialiasing = getAntialiasingOption(args);
 
             SnappingConfig config = SnappingConfig.builder()
                     .snapDistance(snapDistance)
                     .roadSensitivity(roadSensitivity)
                     .smoothRadius(smoothRadius)
+                    .antialiasing(antialiasing)
                     .build();
 
             System.out.println("-> Chargement des images...");
@@ -62,24 +65,18 @@ public final class CliRunner {
 
             System.out.println("-> Détection des axes routiers Google Maps...");
             RoadDetector roadDetector = new RoadDetector();
-            BinaryMask roadBarrier = roadDetector.detectRoads(mapImg, config);
-            Path roadDebugPath = Paths.get("road-debug.png");
+            BinaryMask roadCandidates = roadDetector.detectRoads(mapImg, config);
 
-            ImageExporter.savePng(
-                    ImageExporter.createMaskImage(roadBarrier),
-                    roadDebugPath
-            );
-
-            System.out.println("   Masque routes debug : " + roadDebugPath.toAbsolutePath());
-            System.out.printf("   %d pixels de barrière routière identifiés.\n", roadBarrier.countActivePixels());
+            System.out.printf("   %d pixels candidats routiers identifiés.\n", roadCandidates.countActivePixels());
 
             System.out.println("-> Recalage géodésique sur les routes...");
             RoadSnappingEngine engine = new RoadSnappingEngine();
-            BinaryMask snappedMask = engine.snap(roughMask, roadBarrier, config);
+            CoverageMask coverageMask = engine.snapCoverage(roughMask, roadCandidates, config);
+            BinaryMask snappedMask = coverageMask.toBinaryMask(128);
             System.out.printf("   %d pixels conservés après recalage.\n", snappedMask.countActivePixels());
 
             System.out.println("-> Création et sauvegarde des exports PNG...");
-            BufferedImage clippedImage = ImageExporter.createClippedImage(mapImg, snappedMask, config.smoothRadius());
+            BufferedImage clippedImage = ImageExporter.createClippedImage(mapImg, coverageMask, config.smoothRadius());
             BufferedImage maskResultImg = ImageExporter.createMaskImage(snappedMask);
 
             Path outPath = Paths.get(outputPathStr);
@@ -110,6 +107,15 @@ public final class CliRunner {
             }
         }
         return false;
+    }
+
+    private static boolean getAntialiasingOption(String[] args) {
+        boolean enabled = hasOption(args, "--antialias", "--aa");
+        boolean disabled = hasOption(args, "--no-antialias", "--no-aa");
+        if (enabled && disabled) {
+            throw new IllegalArgumentException("Conflit d'options : impossible de spécifier simultanément l'activation et la désactivation de l'anti-aliasing.");
+        }
+        return !disabled;
     }
 
     private static String getRequiredOptionValue(String[] args, String option) {
@@ -174,6 +180,8 @@ public final class CliRunner {
         out.println("  --snap-distance <int>     Portée maximale d'ajustement en pixels (défaut: 40)");
         out.println("  --road-sensitivity <flt>  Sensibilité détection routes 0.5-2.0 (défaut: 1.0)");
         out.println("  --smooth <int>            Rayon de lissage des bords (défaut: 1)");
+        out.println("  --antialias, --aa          Activer l'anti-aliasing (défaut)");
+        out.println("  --no-antialias, --no-aa    Désactiver l'anti-aliasing");
         out.println("  --gui                     Lancer l'interface graphique interactive Swing");
         out.println("  --help, -h                Afficher cette aide");
     }
