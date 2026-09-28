@@ -1,10 +1,10 @@
-# Découpage de Zone Interne et Exclusion de la Chaussée Routière — Plan d'Implémentation
+# Découpage de Zone Interne Multi-Couleurs et Exclusion de la Chaussée Routière — Plan d'Implémentation
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Permettre le découpage ciblé d'une zone interne de territoire sur Google Maps à partir d'un sélecteur rouge grossier, en garantissant l'exclusion mathématiquement absolue de la chaussée routière (taux de route = 0.0%) et un bord anti-aliasé sub-pixel.
+**Goal:** Permettre le découpage ciblé d'une zone interne de territoire sur Google Maps à partir d'un sélecteur polychrome grossier (rouge, bleu, magenta, cyan ou auto-détection), en garantissant l'exclusion mathématiquement absolue de la chaussée routière (taux de route = 0.0%) et un bord anti-aliasé sub-pixel.
 
-**Architecture:** Détection robuste du cadre rouge et de son intérieur fermé avec réparation bornée de brèches (`RedFrameExtractor`), détection des démarcations sombres cartographiques (`DarkDemarcationDetector`), consolidation étanche des barrières d'exclusion (`ZoneBarrierConsolidator`), inondation géodésique BFS haute performance sans allocation d'objets et masquage strict post-rastérisation vectorielle (`ZoneSegmentationEngine`), avec aiguillage `--mode auto|territory|zone` dans le CLI (`CliRunner`).
+**Architecture:** Modélisation des couleurs d'annotation (`SelectorColor`), détection robuste et fermeture contrôlée des cadres colorés (`ColorRegionSelectorExtractor`), détection des démarcations sombres cartographiques sans confusion avec les annotations (`DarkDemarcationDetector`), consolidation étanche des barrières (`ZoneBarrierConsolidator`), inondation géodésique BFS haute performance sans allocation d'objets et masquage strict post-rastérisation vectorielle (`ZoneSegmentationEngine`), avec aiguillage `--mode auto|territory|zone` et `--zone-color <couleur>` dans le CLI (`CliRunner`).
 
 **Tech Stack:** Java 21 LTS, Java2D, JUnit 5, Maven, Swing (100% Java standard, zéro dépendance native).
 
@@ -16,61 +16,94 @@
 src/main/java/com/sam102022/photoshop/
 ├── core/
 │   ├── model/
-│   │   ├── OperationMode.java            # NOUVEAU : Énumération AUTO, TERRITORY, ZONE
-│   │   └── SnappingConfig.java           # MODIFIÉ : Ajout du champ OperationMode
+│   │   ├── OperationMode.java                 # NOUVEAU : Énumération AUTO, TERRITORY, ZONE
+│   │   ├── SelectorColor.java                 # NOUVEAU : Énumération AUTO, RED, BLUE, MAGENTA, CYAN
+│   │   └── SnappingConfig.java                # MODIFIÉ : Ajout des champs mode et zoneColor
 │   ├── detection/
-│   │   ├── RedFrameExtractor.java        # NOUVEAU : Détection du sélecteur rouge, fermeture contrôlée et intérieur
-│   │   └── DarkDemarcationDetector.java  # NOUVEAU : Détection mesurable des lignes sombres de démarcation
+│   │   ├── ColorRegionSelectorExtractor.java  # NOUVEAU : Détection du cadre coloré, fermeture et intérieur
+│   │   └── DarkDemarcationDetector.java       # NOUVEAU : Détection mesurable des lignes sombres de démarcation
 │   └── segmentation/
-│       ├── ZoneBarrierConsolidator.java  # NOUVEAU : Consolidation étanche des barrières infranchissables
-│       └── ZoneSegmentationEngine.java   # NOUVEAU : Sélection déterministe de graine, BFS haute performance et exclusion stricte
+│       ├── ZoneBarrierConsolidator.java       # NOUVEAU : Consolidation étanche des barrières infranchissables
+│       └── ZoneSegmentationEngine.java        # NOUVEAU : Sélection déterministe de graine, BFS sans allocation et exclusion stricte
 └── cli/
-    └── CliRunner.java                    # MODIFIÉ : Arguments --mode, --territory-mask et aiguillage auto/zone/territory
+    └── CliRunner.java                         # MODIFIÉ : Arguments --mode, --zone-color, --territory-mask et aiguillage
 
 src/test/java/com/sam102022/photoshop/
 ├── core/
 │   ├── model/
-│   │   └── SnappingConfigTest.java       # MODIFIÉ : Tests du mode OperationMode
+│   │   ├── SelectorColorTest.java             # NOUVEAU : Tests unitaires de validation et parsing des couleurs
+│   │   └── SnappingConfigTest.java            # MODIFIÉ : Tests des configurations mode et zoneColor
 │   ├── detection/
-│   │   ├── RedFrameExtractorTest.java    # NOUVEAU : Tests unitaires de détection et fermeture du cadre
-│   │   └── DarkDemarcationDetectorTest.java # NOUVEAU : Tests unitaires des lignes sombres
+│   │   ├── ColorRegionSelectorExtractorTest.java # NOUVEAU : Tests unitaires de détection multi-couleurs et fermeture
+│   │   └── DarkDemarcationDetectorTest.java   # NOUVEAU : Tests unitaires des lignes sombres
 │   └── segmentation/
-│       ├── ZoneBarrierConsolidatorTest.java # NOUVEAU : Tests unitaires de consolidation des barrières
-│       └── ZoneSegmentationEngineTest.java # NOUVEAU : Tests unitaires inondation et garantie d'exclusion routière
-└── IntegrationCliTest.java               # MODIFIÉ : Test grandeur nature avec sample 02 (IoU >= 0.90, road = 0.0%)
+│       ├── ZoneBarrierConsolidatorTest.java   # NOUVEAU : Tests unitaires de consolidation des barrières
+│       └── ZoneSegmentationEngineTest.java   # NOUVEAU : Tests unitaires inondation et garantie d'exclusion routière
+└── IntegrationCliTest.java                    # MODIFIÉ : Test grandeur nature avec sample 02 (IoU >= 0.90, road = 0.0%)
 ```
 
 ---
 
-### Task 1: Modèle `OperationMode` et Évolution de `SnappingConfig`
+### Task 1: Modèles `OperationMode`, `SelectorColor` et Évolution de `SnappingConfig`
 
 **Files:**
 - Create: `src/main/java/com/sam102022/photoshop/core/model/OperationMode.java`
+- Create: `src/main/java/com/sam102022/photoshop/core/model/SelectorColor.java`
+- Create: `src/test/java/com/sam102022/photoshop/core/model/SelectorColorTest.java`
 - Modify: `src/main/java/com/sam102022/photoshop/core/model/SnappingConfig.java`
 - Modify: `src/test/java/com/sam102022/photoshop/core/model/SnappingConfigTest.java`
 
-- [ ] **Step 1: Écrire le test unitaire pour `OperationMode` dans `SnappingConfigTest`**
+- [ ] **Step 1: Écrire les tests unitaires pour `SelectorColor` et `OperationMode`**
 
-Ajouter dans `src/test/java/com/sam102022/photoshop/core/model/SnappingConfigTest.java` :
+Créer `src/test/java/com/sam102022/photoshop/core/model/SelectorColorTest.java` :
 ```java
+package com.sam102022.photoshop.core.model;
+
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+@DisplayName("Tests unitaires pour SelectorColor")
+class SelectorColorTest {
+
     @Test
-    @DisplayName("Vérifier la configuration du mode d'opération avec repli AUTO par défaut")
-    void testOperationModeDefaultsAndCustom() {
-        SnappingConfig defaultConfig = SnappingConfig.defaults();
-        assertEquals(OperationMode.AUTO, defaultConfig.mode(), "Le mode par défaut doit être AUTO");
-
-        SnappingConfig zoneConfig = defaultConfig.withMode(OperationMode.ZONE);
-        assertEquals(OperationMode.ZONE, zoneConfig.mode());
-
-        SnappingConfig territoryConfig = defaultConfig.withMode(OperationMode.TERRITORY);
-        assertEquals(OperationMode.TERRITORY, territoryConfig.mode());
+    @DisplayName("Tester le parsing insensible à la casse et les alias français")
+    void testParsingAndAliases() {
+        assertEquals(SelectorColor.RED, SelectorColor.fromString("red"));
+        assertEquals(SelectorColor.RED, SelectorColor.fromString("ROUGE"));
+        assertEquals(SelectorColor.BLUE, SelectorColor.fromString("bleu"));
+        assertEquals(SelectorColor.MAGENTA, SelectorColor.fromString("magenta"));
+        assertEquals(SelectorColor.CYAN, SelectorColor.fromString("cyan"));
+        assertEquals(SelectorColor.AUTO, SelectorColor.fromString("auto"));
+        assertThrows(IllegalArgumentException.class, () -> SelectorColor.fromString("inconnue"));
     }
+
+    @Test
+    @DisplayName("Tester le filtrage chromatique exact")
+    void testColorMatching() {
+        // Rouge vif
+        assertTrue(SelectorColor.RED.matches(220, 20, 20));
+        assertFalse(SelectorColor.RED.matches(255, 180, 50), "Ne doit pas matcher une route orange");
+        assertFalse(SelectorColor.RED.matches(160, 240, 160), "Ne doit pas matcher le vert territoire");
+
+        // Bleu vif
+        assertTrue(SelectorColor.BLUE.matches(20, 30, 220));
+        assertFalse(SelectorColor.BLUE.matches(200, 200, 200), "Ne doit pas matcher du gris");
+
+        // Magenta
+        assertTrue(SelectorColor.MAGENTA.matches(220, 20, 220));
+
+        // Cyan
+        assertTrue(SelectorColor.CYAN.matches(20, 220, 220));
+    }
+}
 ```
 
 - [ ] **Step 2: Exécuter le test pour vérifier qu'il échoue**
 
-Run: `mvn test -Dtest=SnappingConfigTest#testOperationModeDefaultsAndCustom`
-Expected: FAIL avec "cannot find symbol: class OperationMode"
+Run: `mvn test -Dtest=SelectorColorTest`
+Expected: FAIL avec "cannot find symbol: class SelectorColor"
 
 - [ ] **Step 3: Créer l'énumération `OperationMode`**
 
@@ -83,171 +116,89 @@ package com.sam102022.photoshop.core.model;
  */
 public enum OperationMode {
     /**
-     * Détecte automatiquement la présence d'un cadre rouge fermé de sélection de zone.
-     * Si détecté, bascule en mode ZONE ; sinon, applique le mode TERRITORY global.
+     * Détecte automatiquement la présence d'un cadre de sélection de zone fermé.
      */
     AUTO,
 
     /**
-     * Force le détourage du territoire global (ignore les éventuels tracés rouges).
+     * Force le détourage du territoire global.
      */
     TERRITORY,
 
     /**
-     * Force le découpage d'une zone interne (exige un cadre rouge fermé valide).
+     * Force le découpage d'une zone interne ciblée.
      */
     ZONE
 }
 ```
 
-- [ ] **Step 4: Mettre à jour `SnappingConfig` avec le champ `mode`**
+- [ ] **Step 4: Créer l'énumération `SelectorColor`**
+
+Créer `src/main/java/com/sam102022/photoshop/core/model/SelectorColor.java` :
+- Énumération avec `AUTO`, `RED`, `BLUE`, `MAGENTA`, `CYAN`.
+- Méthode statique `public static SelectorColor fromString(String name)`.
+- Méthode `public boolean matches(int r, int g, int b)`.
+
+- [ ] **Step 5: Mettre à jour `SnappingConfig` avec `mode` et `zoneColor`**
 
 Mettre à jour `src/main/java/com/sam102022/photoshop/core/model/SnappingConfig.java` :
-Ajouter le composant `OperationMode mode` dans le record, le constructeur de compatibilité à 6 arguments qui injecte `OperationMode.AUTO`, mettre à jour `defaults()`, et ajouter la méthode `withMode(OperationMode mode)`.
+- Ajouter `OperationMode mode` et `SelectorColor zoneColor`.
+- Constructeurs de compatibilité conservant les valeurs par défaut `AUTO`.
+- Méthodes `withMode(OperationMode mode)` et `withZoneColor(SelectorColor color)`.
 
-- [ ] **Step 5: Exécuter le test pour vérifier qu'il passe**
+- [ ] **Step 6: Exécuter les tests pour vérifier qu'ils passent**
 
-Run: `mvn test -Dtest=SnappingConfigTest`
+Run: `mvn test -Dtest=SelectorColorTest,SnappingConfigTest`
 Expected: PASS
 
-- [ ] **Step 6: Commiter les modifications**
+- [ ] **Step 7: Commiter les modifications**
 
 Run:
 ```bash
-git add src/main/java/com/sam102022/photoshop/core/model/OperationMode.java src/main/java/com/sam102022/photoshop/core/model/SnappingConfig.java src/test/java/com/sam102022/photoshop/core/model/SnappingConfigTest.java
-git commit -m "feat: ajout OperationMode et intégration dans SnappingConfig"
+git add src/main/java/com/sam102022/photoshop/core/model/OperationMode.java src/main/java/com/sam102022/photoshop/core/model/SelectorColor.java src/main/java/com/sam102022/photoshop/core/model/SnappingConfig.java src/test/java/com/sam102022/photoshop/core/model/SelectorColorTest.java src/test/java/com/sam102022/photoshop/core/model/SnappingConfigTest.java
+git commit -m "feat: ajout OperationMode et SelectorColor avec prédicats chromatiques stricts"
 ```
 
 ---
 
-### Task 2: Détecteur et Extracteur du Sélecteur Rouge (`RedFrameExtractor`)
+### Task 2: Détecteur Polychrome du Sélecteur de Zone (`ColorRegionSelectorExtractor`)
 
 **Files:**
-- Create: `src/main/java/com/sam102022/photoshop/core/detection/RedFrameExtractor.java`
-- Create: `src/test/java/com/sam102022/photoshop/core/detection/RedFrameExtractorTest.java`
+- Create: `src/main/java/com/sam102022/photoshop/core/detection/ColorRegionSelectorExtractor.java`
+- Create: `src/test/java/com/sam102022/photoshop/core/detection/ColorRegionSelectorExtractorTest.java`
 
-- [ ] **Step 1: Écrire les tests unitaires pour `RedFrameExtractor`**
+- [ ] **Step 1: Écrire les tests unitaires pour `ColorRegionSelectorExtractor`**
 
-Créer `src/test/java/com/sam102022/photoshop/core/detection/RedFrameExtractorTest.java` :
-```java
-package com.sam102022.photoshop.core.detection;
-
-import com.sam102022.photoshop.core.model.BinaryMask;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
-
-import java.awt.Color;
-import java.awt.Graphics2D;
-import java.awt.image.BufferedImage;
-
-import static org.junit.jupiter.api.Assertions.*;
-
-@DisplayName("Tests unitaires pour RedFrameExtractor")
-class RedFrameExtractorTest {
-
-    private final RedFrameExtractor extractor = new RedFrameExtractor();
-
-    @Test
-    @DisplayName("Détecter un cadre rouge fermé rectangulaire et extraire son intérieur")
-    void testDetectClosedRedRectangle() {
-        BufferedImage image = new BufferedImage(100, 100, BufferedImage.TYPE_INT_RGB);
-        Graphics2D g = image.createGraphics();
-        g.setColor(Color.WHITE);
-        g.fillRect(0, 0, 100, 100);
-        g.setColor(new Color(220, 20, 20)); // Rouge vif
-        g.drawRect(20, 20, 50, 50);
-        g.dispose();
-
-        assertTrue(extractor.hasRedFrame(image), "Le cadre rouge doit être détecté");
-        BinaryMask interior = extractor.extractInterior(image);
-        assertNotNull(interior);
-        assertTrue(interior.get(45, 45), "Le centre du rectangle doit appartenir à l'intérieur");
-        assertFalse(interior.get(10, 10), "L'extérieur ne doit pas appartenir à l'intérieur");
-        assertFalse(interior.get(20, 20), "Le trait rouge lui-même ne doit pas appartenir à l'intérieur");
-    }
-
-    @Test
-    @DisplayName("Réparer une petite brèche de 3 pixels dans le tracé rouge")
-    void testRepairSmallGap() {
-        BufferedImage image = new BufferedImage(100, 100, BufferedImage.TYPE_INT_RGB);
-        Graphics2D g = image.createGraphics();
-        g.setColor(Color.WHITE);
-        g.fillRect(0, 0, 100, 100);
-        g.setColor(new Color(230, 10, 10));
-        g.drawRect(20, 20, 50, 50);
-        // Créer une brèche de 3 pixels sur le bord haut
-        g.setColor(Color.WHITE);
-        g.fillRect(40, 20, 3, 1);
-        g.dispose();
-
-        assertTrue(extractor.hasRedFrame(image));
-        BinaryMask interior = extractor.extractInterior(image);
-        assertTrue(interior.get(45, 45), "La brèche fine doit être colmatée et l'intérieur préservé");
-        assertFalse(interior.get(5, 5), "L'extérieur ne doit pas être inondé");
-    }
-
-    @Test
-    @DisplayName("Échouer avec exception explicite si la brèche est trop large (> 10 pixels)")
-    void testFailOnLargeGap() {
-        BufferedImage image = new BufferedImage(100, 100, BufferedImage.TYPE_INT_RGB);
-        Graphics2D g = image.createGraphics();
-        g.setColor(Color.WHITE);
-        g.fillRect(0, 0, 100, 100);
-        g.setColor(new Color(230, 10, 10));
-        g.drawRect(20, 20, 50, 50);
-        // Brèche large de 20 pixels
-        g.setColor(Color.WHITE);
-        g.fillRect(35, 20, 20, 1);
-        g.dispose();
-
-        assertThrows(IllegalStateException.class, () -> extractor.extractInterior(image),
-                "Une brèche de 20 pixels ne doit pas être colmatée et doit lever une exception");
-    }
-
-    @Test
-    @DisplayName("Ignorer les images sans cadre rouge significatif")
-    void testIgnoreImagesWithoutRedFrame() {
-        BufferedImage image = new BufferedImage(50, 50, BufferedImage.TYPE_INT_RGB);
-        Graphics2D g = image.createGraphics();
-        g.setColor(Color.WHITE);
-        g.fillRect(0, 0, 50, 50);
-        g.setColor(new Color(255, 160, 50)); // Teinte orange/jaune routière Google Maps
-        g.fillRect(10, 10, 30, 30);
-        g.dispose();
-
-        assertFalse(extractor.hasRedFrame(image));
-    }
-}
-```
+Créer `src/test/java/com/sam102022/photoshop/core/detection/ColorRegionSelectorExtractorTest.java` :
+- Test `testDetectClosedBlueRectangle()` : détection et extraction de l'intérieur d'un rectangle bleu.
+- Test `testDetectMultipleColorsAndDisambiguation()` : image avec un cadre rouge ET un cadre bleu. Si `SelectorColor.AUTO`, lève `IllegalStateException` mentionnant les deux couleurs. Si `SelectorColor.RED`, extrait avec succès l'intérieur rouge.
+- Test `testRepairSmallGap()` : fermeture réussie d'une brèche $\le 5$ pixels.
+- Test `testFailOnLargeGap()` : levée de `IllegalStateException` si brèche $> 10$ pixels.
+- Test `testIgnoreMapBackgroundWithoutAnnotation()` : rejet des fonds sans tracé d'annotation.
 
 - [ ] **Step 2: Exécuter le test pour vérifier qu'il échoue**
 
-Run: `mvn test -Dtest=RedFrameExtractorTest`
-Expected: FAIL avec "cannot find symbol: class RedFrameExtractor"
+Run: `mvn test -Dtest=ColorRegionSelectorExtractorTest`
+Expected: FAIL avec "cannot find symbol: class ColorRegionSelectorExtractor"
 
-- [ ] **Step 3: Implémenter `RedFrameExtractor`**
+- [ ] **Step 3: Implémenter `ColorRegionSelectorExtractor`**
 
-Créer `src/main/java/com/sam102022/photoshop/core/detection/RedFrameExtractor.java` :
-- `public boolean hasRedFrame(BufferedImage image)` : compte les pixels rouges avec $R \ge 150 \land R > G + 40 \land R > B + 40 \land S \ge 0.35 \land B \ge 0.20$. Retourne vrai si $\ge 50$ pixels.
-- `public BinaryMask extractInterior(BufferedImage image)` :
-  1. Construit le masque binaire du trait rouge brut.
-  2. Applique une fermeture morphologique `MorphologyOps.close(rawRed, 5)` pour colmater les brèches $\le 10$ px.
-  3. Effectue une inondation (BFS sur tableau plat `int[] queue`) depuis les bords de l'image sur les pixels non-rouges.
-  4. L'intérieur est le complémentaire des pixels visités et non-rouges.
-  5. Si l'aire intérieure est $< 500$ pixels, lève `IllegalStateException`.
-  6. Retourne le masque intérieur binaire.
+Créer `src/main/java/com/sam102022/photoshop/core/detection/ColorRegionSelectorExtractor.java` :
+- `public List<SelectorColor> detectPresentColors(BufferedImage image)` : retourne les couleurs ayant $\ge 50$ pixels.
+- `public SelectorColor resolveTargetColor(BufferedImage image, SelectorColor requestedColor)` : résout la couleur ou lève une exception descriptive si ambiguïté.
+- `public BinaryMask extractInterior(BufferedImage image, SelectorColor targetColor)` : extrait le masque intérieur de la couleur cible après fermeture contrôlée de rayon 5. Lève `IllegalStateException` si le cadre n'est pas étanche.
 
 - [ ] **Step 4: Exécuter le test pour vérifier qu'il passe**
 
-Run: `mvn test -Dtest=RedFrameExtractorTest`
+Run: `mvn test -Dtest=ColorRegionSelectorExtractorTest`
 Expected: PASS
 
 - [ ] **Step 5: Commiter les modifications**
 
 Run:
 ```bash
-git add src/main/java/com/sam102022/photoshop/core/detection/RedFrameExtractor.java src/test/java/com/sam102022/photoshop/core/detection/RedFrameExtractorTest.java
-git commit -m "feat: ajout RedFrameExtractor avec signature chromatique et fermeture contrôlée"
+git add src/main/java/com/sam102022/photoshop/core/detection/ColorRegionSelectorExtractor.java src/test/java/com/sam102022/photoshop/core/detection/ColorRegionSelectorExtractorTest.java
+git commit -m "feat: ajout ColorRegionSelectorExtractor avec support multi-couleurs et fermeture de brèches"
 ```
 
 ---
@@ -261,73 +212,9 @@ git commit -m "feat: ajout RedFrameExtractor avec signature chromatique et ferme
 - [ ] **Step 1: Écrire les tests unitaires pour `DarkDemarcationDetector`**
 
 Créer `src/test/java/com/sam102022/photoshop/core/detection/DarkDemarcationDetectorTest.java` :
-```java
-package com.sam102022.photoshop.core.detection;
-
-import com.sam102022.photoshop.core.model.BinaryMask;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
-
-import java.awt.Color;
-import java.awt.Graphics2D;
-import java.awt.image.BufferedImage;
-
-import static org.junit.jupiter.api.Assertions.*;
-
-@DisplayName("Tests unitaires pour DarkDemarcationDetector")
-class DarkDemarcationDetectorTest {
-
-    private final DarkDemarcationDetector detector = new DarkDemarcationDetector();
-
-    @Test
-    @DisplayName("Détecter une ligne sombre surimposée sur le calque de limites")
-    void testDetectDarkDemarcationLine() {
-        int w = 50, h = 50;
-        BufferedImage carte = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
-        BufferedImage limites = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
-
-        Graphics2D gc = carte.createGraphics();
-        gc.setColor(new Color(240, 240, 240)); // Fond clair
-        gc.fillRect(0, 0, w, h);
-        gc.dispose();
-
-        Graphics2D gl = limites.createGraphics();
-        gl.setColor(new Color(180, 235, 175)); // Fond vert territoire
-        gl.fillRect(0, 0, w, h);
-        gl.setColor(new Color(60, 60, 60)); // Ligne sombre de démarcation
-        gl.drawLine(25, 5, 25, 45); // Ligne de 40 pixels (> seuil 15)
-        gl.dispose();
-
-        BinaryMask territory = new BinaryMask(w, h);
-        territory.fill(true);
-
-        BinaryMask demarcations = detector.detect(carte, limites, territory);
-        assertTrue(demarcations.get(25, 20), "La ligne sombre doit être détectée");
-        assertFalse(demarcations.get(10, 10), "Le fond vert ordinaire ne doit pas être une démarcation");
-    }
-
-    @Test
-    @DisplayName("Ignorer les petits artefacts ou chiffres isolés (< 15 pixels)")
-    void testFilterSmallNoise() {
-        int w = 50, h = 50;
-        BufferedImage carte = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
-        BufferedImage limites = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
-
-        Graphics2D gl = limites.createGraphics();
-        gl.setColor(new Color(180, 235, 175));
-        gl.fillRect(0, 0, w, h);
-        gl.setColor(new Color(50, 50, 50));
-        gl.fillRect(20, 20, 2, 2); // 4 pixels isolés
-        gl.dispose();
-
-        BinaryMask territory = new BinaryMask(w, h);
-        territory.fill(true);
-
-        BinaryMask demarcations = detector.detect(carte, limites, territory);
-        assertFalse(demarcations.get(20, 20), "Les artefacts isolés < 15 pixels doivent être filtrés");
-    }
-}
-```
+- Test `testDetectDarkDemarcationLine()` : détection d'une ligne sombre ($Y_C - Y_L \ge 45, Y_L \le 125$).
+- Test `testDoNotConfuseWithColorAnnotations()` : vérifie qu'un tracé d'annotation rouge ou bleu vif n'est PAS classé comme démarcation sombre.
+- Test `testFilterSmallNoise()` : suppression des composantes $< 15$ pixels.
 
 - [ ] **Step 2: Exécuter le test pour vérifier qu'il échoue**
 
@@ -337,11 +224,8 @@ Expected: FAIL avec "cannot find symbol: class DarkDemarcationDetector"
 - [ ] **Step 3: Implémenter `DarkDemarcationDetector`**
 
 Créer `src/main/java/com/sam102022/photoshop/core/detection/DarkDemarcationDetector.java` :
-- Méthode `public BinaryMask detect(BufferedImage carte, BufferedImage limites, BinaryMask territory)` :
-  - Calcule la luminance $Y = 0.299R + 0.587G + 0.114B$.
-  - Sélectionne les pixels où $Y_L \le 125 \land Y_C - Y_L \ge 45 \land territory.get(x, y) \land \neg isRed(x, y)$.
-  - Filtre les composantes connexes $< 15$ pixels (nettoyage morphologique ou BFS de composantes).
-  - Retourne le `BinaryMask` des démarcations.
+- Détecte les pixels où $Y_L \le 125 \land Y_C - Y_L \ge 45 \land territory.get(x, y) \land \neg isAnnotationColor(x, y)$.
+- Filtre les composantes isolées $< 15$ pixels.
 
 - [ ] **Step 4: Exécuter le test pour vérifier qu'il passe**
 
@@ -353,7 +237,7 @@ Expected: PASS
 Run:
 ```bash
 git add src/main/java/com/sam102022/photoshop/core/detection/DarkDemarcationDetector.java src/test/java/com/sam102022/photoshop/core/detection/DarkDemarcationDetectorTest.java
-git commit -m "feat: ajout DarkDemarcationDetector pour repérer les délimitations cartographiques sombres"
+git commit -m "feat: ajout DarkDemarcationDetector isolé des annotations colorées"
 ```
 
 ---
@@ -367,63 +251,8 @@ git commit -m "feat: ajout DarkDemarcationDetector pour repérer les délimitati
 - [ ] **Step 1: Écrire les tests unitaires pour `ZoneBarrierConsolidator`**
 
 Créer `src/test/java/com/sam102022/photoshop/core/segmentation/ZoneBarrierConsolidatorTest.java` :
-```java
-package com.sam102022.photoshop.core.segmentation;
-
-import com.sam102022.photoshop.core.model.BinaryMask;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
-
-import static org.junit.jupiter.api.Assertions.*;
-
-@DisplayName("Tests unitaires pour ZoneBarrierConsolidator")
-class ZoneBarrierConsolidatorTest {
-
-    private final ZoneBarrierConsolidator consolidator = new ZoneBarrierConsolidator();
-
-    @Test
-    @DisplayName("Consolider les routes, démarcations et l'extérieur du territoire")
-    void testConsolidateBarriers() {
-        int w = 20, h = 20;
-        BinaryMask roads = new BinaryMask(w, h);
-        roads.set(10, 5, true);
-
-        BinaryMask demarcations = new BinaryMask(w, h);
-        demarcations.set(5, 10, true);
-
-        BinaryMask territory = new BinaryMask(w, h);
-        // Territoire actif sur [2..18, 2..18]
-        for (int y = 2; y <= 18; y++) {
-            for (int x = 2; x <= 18; x++) {
-                territory.set(x, y, true);
-            }
-        }
-
-        BinaryMask barriers = consolidator.consolidate(roads, demarcations, territory);
-        assertTrue(barriers.get(10, 5), "La route doit être une barrière");
-        assertTrue(barriers.get(5, 10), "La démarcation doit être une barrière");
-        assertTrue(barriers.get(0, 0), "L'extérieur du territoire doit être une barrière");
-        assertFalse(barriers.get(15, 15), "L'intérieur libre du territoire ne doit pas être une barrière");
-    }
-
-    @Test
-    @DisplayName("Colmater les diagonales 8-connexes pour interdire les fuites")
-    void testCloseDiagonalBarriers() {
-        int w = 10, h = 10;
-        BinaryMask roads = new BinaryMask(w, h);
-        // Deux pixels en diagonale (5, 5) et (6, 6)
-        roads.set(5, 5, true);
-        roads.set(6, 6, true);
-
-        BinaryMask territory = new BinaryMask(w, h);
-        territory.fill(true);
-
-        BinaryMask barriers = consolidator.consolidate(roads, new BinaryMask(w, h), territory);
-        // Après fermeture morphologique rayon 1, (5, 6) ou (6, 5) doit être bloqué pour empêcher le passage
-        assertTrue(barriers.get(5, 6) || barriers.get(6, 5), "Le passage diagonal doit être colmaté");
-    }
-}
-```
+- Test `testConsolidateBarriers()` : union des routes, démarcations sombres et de l'extérieur du territoire.
+- Test `testCloseDiagonalBarriers()` : colmatage morphologique pour interdire le passage diagonal 8-connexe.
 
 - [ ] **Step 2: Exécuter le test pour vérifier qu'il échoue**
 
@@ -435,8 +264,7 @@ Expected: FAIL avec "cannot find symbol: class ZoneBarrierConsolidator"
 Créer `src/main/java/com/sam102022/photoshop/core/segmentation/ZoneBarrierConsolidator.java` :
 - Méthode `public BinaryMask consolidate(BinaryMask roadCandidates, BinaryMask darkDemarcations, BinaryMask territoryMask)` :
   - Fusionne `roadCandidates | darkDemarcations | ~territoryMask`.
-  - Applique `MorphologyOps.close(rawBarriers, 1)` pour colmater les diagonales 8-connexes.
-  - Retourne les barrières consolidées étanches.
+  - Applique `MorphologyOps.close(rawBarriers, 1)`.
 
 - [ ] **Step 4: Exécuter le test pour vérifier qu'il passe**
 
@@ -448,7 +276,7 @@ Expected: PASS
 Run:
 ```bash
 git add src/main/java/com/sam102022/photoshop/core/segmentation/ZoneBarrierConsolidator.java src/test/java/com/sam102022/photoshop/core/segmentation/ZoneBarrierConsolidatorTest.java
-git commit -m "feat: ajout ZoneBarrierConsolidator pour étanchéifier les barrières bloquantes"
+git commit -m "feat: ajout ZoneBarrierConsolidator avec colmatage des diagonales 8-connexes"
 ```
 
 ---
@@ -462,10 +290,10 @@ git commit -m "feat: ajout ZoneBarrierConsolidator pour étanchéifier les barri
 - [ ] **Step 1: Écrire les tests unitaires pour `ZoneSegmentationEngine`**
 
 Créer `src/test/java/com/sam102022/photoshop/core/segmentation/ZoneSegmentationEngineTest.java` :
-- Test `testSegmentZoneStrictRoadExclusion()` : vérifie que l'inondation s'arrête net sur la route et qu'aucun pixel de route n'est présent dans le `CoverageMask` final (`coverage.get(roadX, roadY) == 0`).
-- Test `testDeterministicSeedSelectionOnSymmetry()` : vérifie qu'une zone symétrique donne toujours exactement la même graine via le centroïde et le tri lexicographique.
-- Test `testFailWhenNoFreePixelsInTerritory()` : vérifie la levée de `IllegalStateException` quand l'intérieur du cadre ne contient aucun pixel libre.
-- Test `testSubPixelAntiAliasingPreserved()` : vérifie la présence de valeurs partielles `0 < v < 255` sur les bordures non routières.
+- Test `testSegmentZoneStrictRoadExclusion()` : inondation arrêtée net sur la route et vérification que tous les pixels de chaussée sont à zéro absolu dans le masque final.
+- Test `testDeterministicSeedSelectionOnSymmetry()` : vérification du départage déterministe de la graine par centroïde et ordre lexicographique.
+- Test `testFailWhenNoFreePixelsInTerritory()` : exception explicite si $S = \emptyset$.
+- Test `testSubPixelAntiAliasingPreserved()` : présence de fractions [1..254] sur les bordures non-routières.
 
 - [ ] **Step 2: Exécuter le test pour vérifier qu'il échoue**
 
@@ -475,13 +303,14 @@ Expected: FAIL avec "cannot find symbol: class ZoneSegmentationEngine"
 - [ ] **Step 3: Implémenter `ZoneSegmentationEngine`**
 
 Créer `src/main/java/com/sam102022/photoshop/core/segmentation/ZoneSegmentationEngine.java` :
-- Recherche déterministe de la graine dans $S = \text{interiorMask} \cap \text{territoryMask} \setminus \text{consolidatedBarriers}$ (distance euclidienne, départage centroïde et lexicographique).
-- Inondation BFS haute performance avec file primitive `int[] queue = new int[W * H]` (zéro allocation `Point`).
+- Sélection déterministe de la graine dans $S$.
+- Inondation BFS haute performance avec file primitive `int[] queue = new int[W * H]` indexée par $y \times W + x$.
+- Confinement strict à l'intérieur de `interiorMask`.
 - Extraction de contour via `ContourExtractor`.
-- Simplification RDP avec $\epsilon = 0.8$ (`ContourSimplifier`).
-- Rastérisation sub-pixel (`PolygonBuilder.rasterizePixelCenterContour`).
-- Préservation sécurisée du noyau intérieur érodé (`MorphologyOps.erode(zoneBinary, 1).andNot(barriers)`).
-- **Garantie absolue d'exclusion :** Pour tout pixel où $\text{roadCandidates}(x, y) == \text{true}$ ou $\neg \text{territoryMask}(x, y)$, forcer explicitement `finalCoverage.set(x, y, 0)`.
+- Simplification RDP avec $\epsilon = 0.8$ via `ContourSimplifier`.
+- Rastérisation sub-pixel continue via `PolygonBuilder`.
+- Préservation du noyau intérieur assaini (`safeCore`).
+- **Garantie absolue d'exclusion :** Pour tout pixel où $\text{roadCandidates}(x, y) == \text{true}$ ou $\neg \text{territoryMask}(x, y)$, forcer `finalCoverage.set(x, y, 0)`.
 
 - [ ] **Step 4: Exécuter le test pour vérifier qu'il passe**
 
@@ -493,22 +322,23 @@ Expected: PASS
 Run:
 ```bash
 git add src/main/java/com/sam102022/photoshop/core/segmentation/ZoneSegmentationEngine.java src/test/java/com/sam102022/photoshop/core/segmentation/ZoneSegmentationEngineTest.java
-git commit -m "feat: ajout ZoneSegmentationEngine avec inondation BFS primitive et exclusion absolue de la chaussée"
+git commit -m "feat: ajout ZoneSegmentationEngine avec exclusion absolue de la chaussée et BFS primitif"
 ```
 
 ---
 
-### Task 6: Intégration CLI et Aiguillage Automatique (`CliRunner`)
+### Task 6: Intégration CLI (`CliRunner`) avec `--mode` et `--zone-color`
 
 **Files:**
 - Modify: `src/main/java/com/sam102022/photoshop/cli/CliRunner.java`
 - Modify: `src/test/java/com/sam102022/photoshop/cli/CliRunnerTest.java`
 
-- [ ] **Step 1: Écrire les tests unitaires pour `--mode` et `--territory-mask` dans `CliRunnerTest`**
+- [ ] **Step 1: Écrire les tests unitaires pour `--mode`, `--zone-color` et `--territory-mask` dans `CliRunnerTest`**
 
 Ajouter dans `src/test/java/com/sam102022/photoshop/cli/CliRunnerTest.java` :
-- Test de parsing `--mode zone`, `--mode territory`, `--mode auto`.
-- Test d'erreur quand `--mode zone` est spécifié mais qu'aucun cadre rouge n'est détecté.
+- Test de parsing `--mode zone --zone-color blue`.
+- Test d'échec si `--mode zone` sans cadre valide.
+- Test d'échec si calque avec plusieurs couleurs d'annotation sans précision de `--zone-color`.
 - Test de parsing `--territory-mask <path>`.
 
 - [ ] **Step 2: Exécuter le test pour vérifier qu'il échoue**
@@ -519,13 +349,10 @@ Expected: FAIL
 - [ ] **Step 3: Mettre à jour `CliRunner`**
 
 Mettre à jour `src/main/java/com/sam102022/photoshop/cli/CliRunner.java` :
-- Parser l'option `--mode <auto|territory|zone>`.
-- Parser l'option `--territory-mask <path>` (ou `-tm`).
-- Charger le masque de territoire si fourni (avec support BYTE_GRAY et ARGB seuillés à 128).
-- Dans l'orchestration du traitement :
-  - Détecter `hasRedFrame` via `RedFrameExtractor`.
-  - Aiguiller vers `ZoneSegmentationEngine` ou `RoadSnappingEngine` selon le mode actif.
-  - Afficher les logs descriptifs en français.
+- Parser `--mode <auto|territory|zone>`.
+- Parser `--zone-color <auto|red|blue|magenta|cyan>` (alias `-zc`).
+- Parser `--territory-mask <path>` (alias `-tm`).
+- Orchestrer l'extraction selon le mode et la couleur de zone choisie, avec logs en français.
 
 - [ ] **Step 4: Exécuter le test pour vérifier qu'il passe**
 
@@ -537,7 +364,7 @@ Expected: PASS
 Run:
 ```bash
 git add src/main/java/com/sam102022/photoshop/cli/CliRunner.java src/test/java/com/sam102022/photoshop/cli/CliRunnerTest.java
-git commit -m "feat: intégration du mode zone et de l'option territory-mask dans CliRunner"
+git commit -m "feat: ajout options --mode, --zone-color et --territory-mask dans CliRunner"
 ```
 
 ---
@@ -549,9 +376,9 @@ git commit -m "feat: intégration du mode zone et de l'option territory-mask dan
 - Modify: `src/main/java/com/sam102022/photoshop/gui/MainWindow.java`
 - Modify: `src/test/java/com/sam102022/photoshop/gui/MainWindowTest.java`
 
-- [ ] **Step 1: Écrire les tests unitaires de l'IHM pour le champ de masque de territoire**
+- [ ] **Step 1: Écrire les tests unitaires de l'IHM**
 
-Ajouter un test dans `src/test/java/com/sam102022/photoshop/gui/MainWindowTest.java` validant la présence du sélecteur optionnel de masque de territoire et la mise à jour du statut lors du chargement d'un cadre rouge.
+Ajouter un test dans `src/test/java/com/sam102022/photoshop/gui/MainWindowTest.java` validant la présence du sélecteur optionnel de masque de territoire et la sélection de couleur de zone.
 
 - [ ] **Step 2: Exécuter le test pour vérifier qu'il échoue**
 
@@ -561,7 +388,7 @@ Expected: FAIL
 - [ ] **Step 3: Implémenter les modifications GUI**
 
 - Dans `FileSelectionPanel` : ajouter un champ de fichier optionnel "Masque Territoire (optionnel)".
-- Dans `MainWindow` : lors du traitement ou du chargement du masque, vérifier si un cadre rouge est présent et afficher le badge ou texte d'état `"Mode : Découpage de Zone (bord intérieur)"`.
+- Dans `MainWindow` : ajouter un sélecteur de couleur de zone (`AUTO`, `ROUGE`, `BLEU`, `MAGENTA`, `CYAN`) et actualiser le message d'état du mode actif.
 
 - [ ] **Step 4: Exécuter le test pour vérifier qu'il passe**
 
@@ -573,12 +400,12 @@ Expected: PASS
 Run:
 ```bash
 git add src/main/java/com/sam102022/photoshop/gui/FileSelectionPanel.java src/main/java/com/sam102022/photoshop/gui/MainWindow.java src/test/java/com/sam102022/photoshop/gui/MainWindowTest.java
-git commit -m "feat: support du mode zone et du masque de territoire dans la GUI Swing"
+git commit -m "feat: ajout sélection de couleur et masque de territoire dans l'IHM Swing"
 ```
 
 ---
 
-### Task 8: Test d'Intégration Grandeur Nature (`Sample 02`) et Validation Complète
+### Task 8: Test d'Intégration Réel (`Sample 02`) et Validation Complète
 
 **Files:**
 - Modify: `src/test/java/com/sam102022/photoshop/IntegrationCliTest.java`
@@ -586,13 +413,13 @@ git commit -m "feat: support du mode zone et du masque de territoire dans la GUI
 - [ ] **Step 1: Écrire le test d'intégration sur `sample 02` dans `IntegrationCliTest`**
 
 Ajouter dans `src/test/java/com/sam102022/photoshop/IntegrationCliTest.java` :
-- Charger `src/main/resources/sample 02/carte à découper.jpg`, `limites.jpg`, et tracer un cadre rouge entourant la zone 1 (ou charger une image annotée).
+- Charger `src/main/resources/sample 02/carte à découper.jpg`, `limites.jpg` avec un cadre rouge tracé autour de la zone 1 (ou annoter l'image en mémoire avec un contour rouge fermant la zone 1).
 - Charger `src/main/resources/sample 02/mask territoire.jpg`.
 - Charger la référence attendue `src/main/resources/sample 02/mask zone 1.jpg`.
-- Exécuter le traitement en mode `--mode zone`.
-- **Assertion 1 :** Calculer l'IoU binaire au seuil 128 et vérifier que $\text{IoU} \ge 0.90$.
-- **Assertion 2 :** Vérifier que pour chaque pixel du masque final, si `roadCandidates.get(x, y)` est vrai, alors `mask.get(x, y) == 0` (taux d'inclusion routière = 0.000%).
-- **Assertion 3 :** Vérifier la présence de valeurs sub-pixel partielles `0 < v < 255` sur le contour.
+- Exécuter le découpage de zone avec `--mode zone --zone-color red --territory-mask ...`.
+- **Assertion 1 :** $\text{IoU} \ge 0.90$ par rapport à `mask zone 1.jpg`.
+- **Assertion 2 :** Pour chaque pixel du masque final, si `roadCandidates.get(x, y)` est vrai, alors `mask.get(x, y) == 0` (taux d'inclusion routière = 0.000%).
+- **Assertion 3 :** Présence de valeurs sub-pixel partielles `0 < v < 255` sur le contour extérieur.
 
 - [ ] **Step 2: Exécuter le test d'intégration pour vérifier qu'il passe**
 
@@ -604,10 +431,10 @@ Expected: PASS
 Run: `mvn test`
 Expected: BUILD SUCCESS (100% des tests passants)
 
-- [ ] **Step 4: Commiter le test d'intégration et les ajustements finaux**
+- [ ] **Step 4: Commiter le test d'intégration et la validation finale**
 
 Run:
 ```bash
 git add src/test/java/com/sam102022/photoshop/IntegrationCliTest.java
-git commit -m "test: test d'intégration grandeur nature sur sample 02 avec IoU >= 0.90 et exclusion stricte des routes"
+git commit -m "test: test d'intégration multi-couleurs sur sample 02 avec IoU >= 0.90 et exclusion stricte des routes"
 ```
