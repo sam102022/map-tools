@@ -67,6 +67,32 @@ class ZoneSegmentationEngineTest {
     }
 
     @Test
+    @DisplayName("Calage vectoriel géométrique précis au bord intérieur d'une rue blanche")
+    void testZoneSnapsGeometricallyToInnerRoadEdge() {
+        int w = 50, h = 50;
+        BinaryMask territory = new BinaryMask(w, h).not();
+
+        // Rue locale blanche à x=[25..28]
+        BinaryMask roads = new BinaryMask(w, h);
+        for (int y = 0; y < h; y++) {
+            for (int x = 25; x <= 28; x++) {
+                roads.set(x, y, true);
+            }
+        }
+
+        BinaryMask barriers = roads.copy();
+        BinaryMask interior = new BinaryMask(w, h);
+        fillRegion(interior, 10, 10, 14, 30); // x de 10 à 23 (s'arrête à 1 pixel avant la route)
+
+        CoverageMask result = engine.segmentZone(interior, roads, barriers, territory, defaultConfig);
+        assertNotNull(result);
+
+        // La bordure de la zone doit s'arrêter exactement à x=24 avec couverture active
+        assertTrue(result.get(24, 20) > 0, "Le bord intérieur à x=24 doit être actif");
+        assertEquals(0, result.get(25, 20), "La chaussée à x=25 doit être strictement à 0");
+    }
+
+    @Test
     @DisplayName("Sélection déterministe de la graine sur une zone symétrique")
     void testDeterministicSeedSelectionOnSymmetry() {
         int w = 50;

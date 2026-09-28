@@ -4,6 +4,7 @@ import com.sam102022.photoshop.core.geometry.ContourExtractor;
 import com.sam102022.photoshop.core.geometry.ContourSimplifier;
 import com.sam102022.photoshop.core.geometry.PolygonBuilder;
 import com.sam102022.photoshop.core.geometry.RoadSnapper;
+import com.sam102022.photoshop.core.geometry.SnapTargetEdge;
 import com.sam102022.photoshop.core.model.BinaryMask;
 import com.sam102022.photoshop.core.model.CoverageMask;
 import com.sam102022.photoshop.core.model.SnappingConfig;
@@ -83,14 +84,21 @@ public class RoadSnappingEngine {
             return new CoverageMask(roughGreenMask.getWidth(), roughGreenMask.getHeight());
         }
 
-        // Unifier les composantes disjointes séparées par des étiquettes ou césures fines
+        // Unifier d'abord les césures fines : plusieurs morceaux voisins du
+        // territoire peuvent ainsi former sa composante principale.
         BinaryMask unifiedMask = config.closingRadius() > 0
                 ? MorphologyOps.close(roughGreenMask, config.closingRadius())
                 : roughGreenMask;
 
-        List<Point> contour = contourExtractor.extractLargestContour(unifiedMask);
+        // La forme est vectorisée depuis sa composante principale uniquement.
+        // Le noyau et les replis doivent être limités à cette même composante,
+        // sinon des îlots/artefacts du masque brut réapparaissent dans le résultat.
+        BinaryMask primaryUnified = MorphologyOps.keepLargestComponent(unifiedMask);
+        BinaryMask primaryMask = intersect(roughGreenMask, primaryUnified);
+
+        List<Point> contour = contourExtractor.extractLargestContour(primaryUnified);
         if (contour.size() < 3) {
-            return CoverageMask.fromBinaryMask(roughGreenMask);
+            return CoverageMask.fromBinaryMask(primaryMask);
         }
 
         // Simplifier les micro-marches d'escalier du contour raster
@@ -101,17 +109,17 @@ public class RoadSnappingEngine {
 
         long distinctPoints = simplified.stream().distinct().count();
         if (distinctPoints < 3) {
-            return CoverageMask.fromBinaryMask(roughGreenMask);
+            return CoverageMask.fromBinaryMask(primaryMask);
         }
 
         // Si aucune route candidate n'est présente :
         // Le contour extrait est rasterisé pour conserver un rendu anti-aliasé sub-pixel
         if (roadCandidates.countActivePixels() == 0) {
-            return rasterizeAndPreserveCore(roughGreenMask, simplified, config.antialiasing());
+            return rasterizeAndPreserveCore(primaryMask, simplified, config.antialiasing());
         }
 
         List<Point> adjustedContour = roadSnapper.snap(simplified, roadCandidates,
-                roughGreenMask.getWidth(), roughGreenMask.getHeight(), config);
+                primaryMask.getWidth(), primaryMask.getHeight(), config, SnapTargetEdge.OUTER);
 
         boolean moved = false;
         for (int i = 0; i < simplified.size(); i++) {
@@ -121,10 +129,22 @@ public class RoadSnappingEngine {
             }
         }
         if (!moved) {
-            return rasterizeAndPreserveCore(roughGreenMask, simplified, config.antialiasing());
+            return rasterizeAndPreserveCore(primaryMask, simplified, config.antialiasing());
         }
 
-        return rasterizeAndPreserveCore(roughGreenMask, adjustedContour, config.antialiasing());
+        return rasterizeAndPreserveCore(primaryMask, adjustedContour, config.antialiasing());
+    }
+
+    private BinaryMask intersect(BinaryMask first, BinaryMask second) {
+        BinaryMask result = new BinaryMask(first.getWidth(), first.getHeight());
+        for (int y = 0; y < first.getHeight(); y++) {
+            for (int x = 0; x < first.getWidth(); x++) {
+                if (first.get(x, y) && second.get(x, y)) {
+                    result.set(x, y, true);
+                }
+            }
+        }
+        return result;
     }
 
     /**

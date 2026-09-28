@@ -3,6 +3,8 @@ package com.sam102022.photoshop.core.segmentation;
 import com.sam102022.photoshop.core.geometry.ContourExtractor;
 import com.sam102022.photoshop.core.geometry.ContourSimplifier;
 import com.sam102022.photoshop.core.geometry.PolygonBuilder;
+import com.sam102022.photoshop.core.geometry.RoadSnapper;
+import com.sam102022.photoshop.core.geometry.SnapTargetEdge;
 import com.sam102022.photoshop.core.model.BinaryMask;
 import com.sam102022.photoshop.core.model.CoverageMask;
 import com.sam102022.photoshop.core.model.SnappingConfig;
@@ -31,6 +33,7 @@ public final class ZoneSegmentationEngine {
     private final ContourExtractor contourExtractor;
     private final ContourSimplifier contourSimplifier;
     private final PolygonBuilder polygonBuilder;
+    private final RoadSnapper roadSnapper;
 
     /**
      * Initialise une nouvelle instance du moteur avec ses composants géométriques dédiés.
@@ -39,6 +42,7 @@ public final class ZoneSegmentationEngine {
         this.contourExtractor = new ContourExtractor();
         this.contourSimplifier = new ContourSimplifier();
         this.polygonBuilder = new PolygonBuilder();
+        this.roadSnapper = new RoadSnapper();
     }
 
     /**
@@ -70,7 +74,7 @@ public final class ZoneSegmentationEngine {
         Point seed = findDeterministicSeed(admissibleDomain, width, height);
         BinaryMask zoneBinary = floodFillZone(interiorMask, consolidatedBarriers, seed, width, height);
 
-        CoverageMask coverage = rasterizeZoneCoverage(zoneBinary, consolidatedBarriers, config, width, height);
+        CoverageMask coverage = rasterizeZoneCoverage(zoneBinary, roadCandidates, consolidatedBarriers, config, width, height);
         applyStrictExclusions(coverage, roadCandidates, territoryMask, width, height);
 
         return coverage;
@@ -394,17 +398,19 @@ public final class ZoneSegmentationEngine {
     }
 
     /**
-     * Rasterise le contour polygonisé avec anti-aliasing et fusion du noyau érodé sécurisé.
+     * Rasterise le contour polygonisé avec calage INNER au pied de la chaussée, anti-aliasing et fusion du noyau érodé sécurisé.
      *
-     * @param zoneBinary Masque binaire brut de la zone inondée.
-     * @param barriers   Masque des barrières infranchissables.
-     * @param config     Configuration de recalage.
-     * @param width      Largeur de l'image.
-     * @param height     Hauteur de l'image.
+     * @param zoneBinary     Masque binaire brut de la zone inondée.
+     * @param roadCandidates Masque des axes routiers candidats.
+     * @param barriers       Masque des barrières infranchissables.
+     * @param config         Configuration de recalage.
+     * @param width          Largeur de l'image.
+     * @param height         Hauteur de l'image.
      * @return Masque de couverture continue résultant.
      */
-    private CoverageMask rasterizeZoneCoverage(BinaryMask zoneBinary, BinaryMask barriers,
-                                               SnappingConfig config, int width, int height) {
+    private CoverageMask rasterizeZoneCoverage(BinaryMask zoneBinary, BinaryMask roadCandidates,
+                                               BinaryMask barriers, SnappingConfig config,
+                                               int width, int height) {
         List<Point> contour = contourExtractor.extractLargestContour(zoneBinary);
         if (contour.size() < 3) {
             return CoverageMask.fromBinaryMask(zoneBinary);
@@ -415,8 +421,14 @@ public final class ZoneSegmentationEngine {
             simplified = contour;
         }
 
+        List<Point> snapped = roadSnapper.snapContour(
+                simplified, roadCandidates, width, height, config.snapDistance(), SnapTargetEdge.INNER);
+        if (snapped.size() < 3) {
+            snapped = simplified;
+        }
+
         CoverageMask coverage = polygonBuilder.rasterizePixelCenterContour(
-                width, height, simplified, config.antialiasing());
+                width, height, snapped, config.antialiasing());
 
         BinaryMask safeCore = MorphologyOps.erode(zoneBinary, 1).and(barriers.not());
         return coverage.max(CoverageMask.fromBinaryMask(safeCore));
