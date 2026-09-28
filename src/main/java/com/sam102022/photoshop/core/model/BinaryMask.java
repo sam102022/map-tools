@@ -1,5 +1,6 @@
 package com.sam102022.photoshop.core.model;
 
+import java.awt.image.BufferedImage;
 import java.util.Arrays;
 
 /**
@@ -175,6 +176,51 @@ public class BinaryMask {
             result.data[i] = !this.data[i];
         }
         return result;
+    }
+
+    /**
+     * Crée un masque binaire à partir d'une image en seuillant sa luminance et son canal alpha.
+     *
+     * @param img       Image source à convertir.
+     * @param threshold Seuil d'activation de luminance et d'alpha [0..255].
+     * @return Nouveau masque binaire seuillé.
+     * @throws IllegalArgumentException si img est null ou si threshold est hors bornes [0..255].
+     */
+    public static BinaryMask fromImage(BufferedImage img, int threshold) {
+        if (img == null) {
+            throw new IllegalArgumentException("L'image ne peut pas être null.");
+        }
+        if (threshold < 0 || threshold > 255) {
+            throw new IllegalArgumentException("Le seuil doit être compris entre 0 et 255 : " + threshold);
+        }
+
+        int w = img.getWidth();
+        int h = img.getHeight();
+        BinaryMask mask = new BinaryMask(w, h);
+        boolean hasAlpha = img.getColorModel().hasAlpha();
+
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                int rgb = img.getRGB(x, y);
+                boolean active;
+                if (hasAlpha) {
+                    int alpha = (rgb >> 24) & 0xFF;
+                    int r = (rgb >> 16) & 0xFF;
+                    int g = (rgb >> 8) & 0xFF;
+                    int b = rgb & 0xFF;
+                    int lum = (int) Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+                    active = (alpha >= threshold) && (lum >= threshold);
+                } else {
+                    int r = (rgb >> 16) & 0xFF;
+                    int g = (rgb >> 8) & 0xFF;
+                    int b = rgb & 0xFF;
+                    int lum = (int) Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+                    active = lum >= threshold;
+                }
+                mask.set(x, y, active);
+            }
+        }
+        return mask;
     }
 
     /**

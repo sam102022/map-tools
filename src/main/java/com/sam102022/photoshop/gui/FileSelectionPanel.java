@@ -13,20 +13,23 @@ import java.io.File;
 import java.util.function.Consumer;
 
 /**
- * Panneau supérieur d'interface graphique permettant la sélection des fichiers de carte et de calque.
+ * Panneau supérieur d'interface graphique permettant la sélection des fichiers de carte, de calque
+ * et optionnellement du masque de territoire préexistant.
  */
 public class FileSelectionPanel extends JPanel {
     private final JLabel mapLabel = new JLabel("Carte : Aucune sélectionnée");
     private final JLabel maskLabel = new JLabel("Calque : Aucun sélectionné");
+    private final JLabel territoryMaskLabel = new JLabel("Masque Territoire (optionnel) : Aucun");
 
     private Consumer<File> mapFileConsumer;
     private Consumer<File> maskFileConsumer;
+    private Consumer<File> territoryMaskFileConsumer;
 
     /**
      * Initialise le panneau de sélection de fichiers avec ses boutons et étiquettes associées.
      */
     public FileSelectionPanel() {
-        setLayout(new GridLayout(2, 1, 5, 5));
+        setLayout(new GridLayout(3, 1, 5, 5));
         setBorder(new EmptyBorder(10, 10, 10, 10));
 
         JPanel mapRow = new JPanel(new FlowLayout(FlowLayout.LEFT));
@@ -41,8 +44,15 @@ public class FileSelectionPanel extends JPanel {
         maskRow.add(loadMaskBtn);
         maskRow.add(maskLabel);
 
+        JPanel territoryRow = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        JButton loadTerritoryBtn = new JButton("Parcourir Masque Territoire...");
+        loadTerritoryBtn.addActionListener(e -> chooseFile("Sélectionner le masque de territoire", this, territoryMaskFileConsumer));
+        territoryRow.add(loadTerritoryBtn);
+        territoryRow.add(territoryMaskLabel);
+
         add(mapRow);
         add(maskRow);
+        add(territoryRow);
     }
 
     /**
@@ -81,6 +91,15 @@ public class FileSelectionPanel extends JPanel {
     }
 
     /**
+     * Enregistre l'action exécutée lors de la sélection d'un fichier de masque de territoire.
+     *
+     * @param consumer Consommateur recevant le fichier de masque de territoire sélectionné.
+     */
+    public void setOnTerritoryMaskFileSelected(Consumer<File> consumer) {
+        this.territoryMaskFileConsumer = consumer;
+    }
+
+    /**
      * Met à jour le texte du libellé d'information de la carte.
      *
      * @param text Texte à afficher.
@@ -96,5 +115,14 @@ public class FileSelectionPanel extends JPanel {
      */
     public void setMaskLabelText(String text) {
         maskLabel.setText(text);
+    }
+
+    /**
+     * Met à jour le texte du libellé d'information du masque de territoire.
+     *
+     * @param text Texte à afficher.
+     */
+    public void setTerritoryMaskLabelText(String text) {
+        territoryMaskLabel.setText(text);
     }
 }

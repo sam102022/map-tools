@@ -1,5 +1,7 @@
 package com.sam102022.photoshop.gui;
 
+import com.sam102022.photoshop.core.model.OperationMode;
+import com.sam102022.photoshop.core.model.SelectorColor;
 import com.sam102022.photoshop.core.model.SnappingConfig;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -10,8 +12,13 @@ import java.lang.reflect.InvocationTargetException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+/**
+ * Tests unitaires pour {@link ControlsPanel}.
+ */
 class ControlsPanelTest {
 
     @Test
@@ -35,6 +42,16 @@ class ControlsPanelTest {
         assertTrue(defaultConfig.antialiasing());
         assertEquals(40, defaultConfig.snapDistance());
         assertEquals(1, defaultConfig.smoothRadius());
+        assertEquals(SelectorColor.AUTO, defaultConfig.zoneColor());
+        assertEquals(OperationMode.AUTO, defaultConfig.mode());
+
+        SwingUtilities.invokeAndWait(() -> {
+            panel.setSelectedColor(SelectorColor.RED);
+        });
+        assertEquals(SelectorColor.RED, panel.getSelectedColor());
+        SnappingConfig zoneConfig = panel.buildConfig();
+        assertEquals(SelectorColor.RED, zoneConfig.zoneColor());
+        assertEquals(OperationMode.ZONE, zoneConfig.mode());
 
         AtomicBoolean clipClicked = new AtomicBoolean(false);
         AtomicBoolean exportClicked = new AtomicBoolean(false);

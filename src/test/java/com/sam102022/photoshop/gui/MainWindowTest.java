@@ -3,14 +3,24 @@ package com.sam102022.photoshop.gui;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import javax.swing.*;
-import java.awt.*;
+import javax.swing.JCheckBox;
+import javax.swing.SwingUtilities;
+import java.awt.Color;
+import java.awt.Graphics2D;
+import java.awt.GraphicsEnvironment;
+import java.awt.Polygon;
 import java.awt.image.BufferedImage;
 import java.lang.reflect.InvocationTargetException;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
+/**
+ * Tests d'intégration et unitaires pour l'interface graphique {@link MainWindow}.
+ */
 class MainWindowTest {
 
     @Test
@@ -145,6 +155,45 @@ class MainWindowTest {
                 assertTrue(alpha == 0 || alpha == 255, "Sans AA et sans lissage, l'alpha doit être strictement 0 ou 255, trouvé: " + alpha);
             }
         }
+
+        SwingUtilities.invokeAndWait(window::dispose);
+    }
+
+    @Test
+    @DisplayName("Détourage de zone via l'interface GUI avec cadre rouge de sélection")
+    void testZoneClippingViaGui() throws Exception {
+        if (GraphicsEnvironment.isHeadless()) {
+            return;
+        }
+
+        AtomicReference<MainWindow> windowRef = new AtomicReference<>();
+        SwingUtilities.invokeAndWait(() -> {
+            MainWindow window = new MainWindow();
+            int w = 60, h = 60;
+            BufferedImage map = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+            BufferedImage mask = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+
+            // Fond vert territoire
+            Graphics2D g = mask.createGraphics();
+            g.setColor(new Color(180, 235, 175));
+            g.fillRect(5, 5, 50, 50);
+
+            // Tracé rouge fermé de sélection de zone
+            g.setColor(new Color(230, 20, 20));
+            g.drawRect(15, 15, 25, 25);
+            g.dispose();
+
+            window.setTestImages(map, mask);
+            window.triggerClipping();
+            windowRef.set(window);
+        });
+
+        MainWindow window = windowRef.get();
+        waitForClippingCompletion(window);
+
+        BufferedImage clipped = window.getClippedImage();
+        assertNotNull(clipped, "L'image détourée en mode zone doit être générée");
+        assertTrue(window.getStatusBar().getMessage().contains("Détourage terminé"));
 
         SwingUtilities.invokeAndWait(window::dispose);
     }

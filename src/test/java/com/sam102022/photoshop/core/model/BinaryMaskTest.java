@@ -3,9 +3,47 @@ package com.sam102022.photoshop.core.model;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
+import java.awt.Color;
+import java.awt.Graphics2D;
+import java.awt.image.BufferedImage;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/**
+ * Tests unitaires pour {@link BinaryMask}.
+ */
 class BinaryMaskTest {
+
+    @Test
+    @DisplayName("Conversion depuis une image avec seuillage de luminance et canal alpha")
+    void testFromImage() {
+        BufferedImage img = new BufferedImage(10, 10, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = img.createGraphics();
+        g.setColor(new Color(255, 255, 255, 255)); // Actif (blanc opaque)
+        g.fillRect(0, 0, 5, 10);
+        g.setColor(new Color(0, 0, 0, 255)); // Inactif (noir opaque)
+        g.fillRect(5, 0, 5, 5);
+        g.setColor(new Color(255, 255, 255, 50)); // Inactif (alpha < 128)
+        g.fillRect(5, 5, 5, 5);
+        g.dispose();
+
+        BinaryMask mask = BinaryMask.fromImage(img, 128);
+        assertNotNull(mask);
+        assertEquals(10, mask.getWidth());
+        assertEquals(10, mask.getHeight());
+        assertEquals(50, mask.countActivePixels());
+        assertTrue(mask.get(2, 2));
+        assertFalse(mask.get(7, 2));
+        assertFalse(mask.get(7, 7));
+
+        assertThrows(IllegalArgumentException.class, () -> BinaryMask.fromImage(null, 128));
+        assertThrows(IllegalArgumentException.class, () -> BinaryMask.fromImage(img, -1));
+        assertThrows(IllegalArgumentException.class, () -> BinaryMask.fromImage(img, 256));
+    }
 
     @Test
     @DisplayName("Initialisation d'un masque vide avec dimensions valides")

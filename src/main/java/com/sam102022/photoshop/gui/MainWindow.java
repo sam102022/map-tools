@@ -1,11 +1,17 @@
 package com.sam102022.photoshop.gui;
 
+import com.sam102022.photoshop.core.detection.ColorRegionSelectorExtractor;
+import com.sam102022.photoshop.core.detection.DarkDemarcationDetector;
 import com.sam102022.photoshop.core.detection.GreenMaskExtractor;
 import com.sam102022.photoshop.core.detection.RoadDetector;
 import com.sam102022.photoshop.core.model.BinaryMask;
 import com.sam102022.photoshop.core.model.CoverageMask;
+import com.sam102022.photoshop.core.model.OperationMode;
+import com.sam102022.photoshop.core.model.SelectorColor;
 import com.sam102022.photoshop.core.model.SnappingConfig;
 import com.sam102022.photoshop.core.segmentation.RoadSnappingEngine;
+import com.sam102022.photoshop.core.segmentation.ZoneBarrierConsolidator;
+import com.sam102022.photoshop.core.segmentation.ZoneSegmentationEngine;
 import com.sam102022.photoshop.io.ImageExporter;
 import com.sam102022.photoshop.io.ImageLoader;
 
@@ -24,11 +30,12 @@ import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.concurrent.ExecutionException;
 
 /**
  * Fenêtre principale de l'interface graphique Swing orchestrant les sous-composants visuels,
- * le chargement des cartes/calques, le calcul asynchrone du détourage et l'exportation.
+ * le chargement des cartes/calques/masques, le calcul asynchrone du détourage et l'exportation.
  */
 public class MainWindow extends JFrame {
 
@@ -43,6 +50,7 @@ public class MainWindow extends JFrame {
 
     private BufferedImage mapImage;
     private BufferedImage maskImage;
+    private BufferedImage territoryMaskImage;
     private BufferedImage clippedImage;
     private CoverageMask resultCoverage;
     private BinaryMask resultMask;
@@ -93,6 +101,7 @@ public class MainWindow extends JFrame {
     private void initEventHandlers() {
         fileSelectionPanel.setOnMapFileSelected(this::loadMapFile);
         fileSelectionPanel.setOnMaskFileSelected(this::loadMaskFile);
+        fileSelectionPanel.setOnTerritoryMaskFileSelected(this::loadTerritoryMaskFile);
 
         controlsPanel.setClipAction(this::runClipping);
         controlsPanel.setExportAction(this::exportResult);
@@ -123,8 +132,31 @@ public class MainWindow extends JFrame {
             maskImage = ImageLoader.load(file.toPath());
             fileSelectionPanel.setMaskLabelText(String.format("Calque : %s (%dx%d)", file.getName(), maskImage.getWidth(), maskImage.getHeight()));
             updateOriginalPreview();
+
+            ColorRegionSelectorExtractor colorExtractor = new ColorRegionSelectorExtractor();
+            List<SelectorColor> colors = colorExtractor.detectPresentColors(maskImage);
+            if (!colors.isEmpty()) {
+                statusBar.setMessage("Mode détecté : Découpage de Zone " + colors + " (bord intérieur routes)");
+            } else {
+                statusBar.setMessage("Mode détecté : Détourage Territoire");
+            }
         } catch (Exception ex) {
             JOptionPane.showMessageDialog(this, "Erreur de chargement : " + ex.getMessage(), "Erreur", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    /**
+     * Charge une image de masque de territoire optionnelle depuis un fichier.
+     *
+     * @param file Fichier image du masque de territoire.
+     */
+    private void loadTerritoryMaskFile(File file) {
+        try {
+            territoryMaskImage = ImageLoader.load(file.toPath());
+            fileSelectionPanel.setTerritoryMaskLabelText(String.format("Masque Territoire : %s (%dx%d)",
+                    file.getName(), territoryMaskImage.getWidth(), territoryMaskImage.getHeight()));
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this, "Erreur de chargement du masque de territoire : " + ex.getMessage(), "Erreur", JOptionPane.ERROR_MESSAGE);
         }
     }
 
@@ -165,6 +197,9 @@ public class MainWindow extends JFrame {
 
         try {
             ImageLoader.validateDimensions(mapImage, maskImage);
+            if (territoryMaskImage != null) {
+                ImageLoader.validateDimensions(mapImage, territoryMaskImage);
+            }
         } catch (IllegalArgumentException e) {
             JOptionPane.showMessageDialog(this, e.getMessage(), "Erreur de dimensions", JOptionPane.ERROR_MESSAGE);
             return;
@@ -180,16 +215,21 @@ public class MainWindow extends JFrame {
         SwingWorker<ClippingResult, Void> worker = new SwingWorker<>() {
             @Override
             protected ClippingResult doInBackground() {
-                GreenMaskExtractor greenExtractor = new GreenMaskExtractor();
-                BinaryMask roughMask = greenExtractor.extract(maskImage);
+                BinaryMask territoryMask = resolveTerritoryMask(maskImage, territoryMaskImage);
 
-                RoadDetector roadDetector = new RoadDetector();
-                BinaryMask roadCandidates = roadDetector.detectRoads(mapImage, config);
+                ColorRegionSelectorExtractor colorExtractor = new ColorRegionSelectorExtractor();
+                List<SelectorColor> presentColors = colorExtractor.detectPresentColors(maskImage);
 
-                RoadSnappingEngine engine = new RoadSnappingEngine();
-                CoverageMask computedCoverage = engine.snapCoverage(roughMask, roadCandidates, config);
+                CoverageMask computedCoverage;
+                if (shouldExecuteZone(config.mode(), config.zoneColor(), presentColors)) {
+                    SelectorColor targetColor = resolveTargetColor(config.zoneColor(), presentColors);
+                    computedCoverage = executeZoneSegmentation(mapImage, maskImage, territoryMask,
+                            colorExtractor, targetColor, config);
+                } else {
+                    computedCoverage = executeTerritorySnapping(mapImage, territoryMask, config);
+                }
+
                 BinaryMask computedMask = computedCoverage.toBinaryMask(128);
-
                 BufferedImage renderedImage = ImageExporter.createClippedImage(mapImage, computedCoverage, config.smoothRadius());
                 return new ClippingResult(renderedImage, computedCoverage, computedMask);
             }
@@ -216,6 +256,113 @@ public class MainWindow extends JFrame {
         };
 
         worker.execute();
+    }
+
+    /**
+     * Résout le masque du territoire global à partir du calque vert ou du masque fourni.
+     *
+     * @param maskImg      Image du calque de limites.
+     * @param territoryImg Image optionnelle du masque de territoire fourni.
+     * @return Masque binaire du territoire global.
+     */
+    private static BinaryMask resolveTerritoryMask(BufferedImage maskImg, BufferedImage territoryImg) {
+        if (territoryImg != null) {
+            return BinaryMask.fromImage(territoryImg, 128);
+        }
+        GreenMaskExtractor greenExtractor = new GreenMaskExtractor();
+        return greenExtractor.extract(maskImg);
+    }
+
+    /**
+     * Détermine si le mode zone doit être activé pour le traitement GUI.
+     *
+     * @param mode           Mode d'opération configuré.
+     * @param requestedColor Couleur de zone demandée.
+     * @param presentColors  Couleurs d'annotations détectées.
+     * @return {@code true} si le mode zone doit être exécuté, {@code false} pour le mode territoire.
+     * @throws IllegalStateException si plusieurs cadres de couleurs distinctes coexistent en mode AUTO.
+     */
+    private static boolean shouldExecuteZone(OperationMode mode, SelectorColor requestedColor,
+                                             List<SelectorColor> presentColors) {
+        if (mode == OperationMode.TERRITORY) {
+            return false;
+        }
+        if (mode == OperationMode.ZONE) {
+            return true;
+        }
+        if (requestedColor != SelectorColor.AUTO) {
+            return true;
+        }
+        if (presentColors.size() > 1) {
+            throw new IllegalStateException("Plusieurs cadres de couleurs distinctes ont été détectés : "
+                    + presentColors + ". Veuillez sélectionner la couleur à découper.");
+        }
+        return presentColors.size() == 1;
+    }
+
+    /**
+     * Résout la couleur cible pour la découpe de zone.
+     *
+     * @param requested     Couleur demandée dans la configuration.
+     * @param presentColors Couleurs détectées dans l'image.
+     * @return Couleur cible validée.
+     * @throws IllegalArgumentException si la couleur demandée est absente ou si aucun cadre n'existe.
+     * @throws IllegalStateException    si plusieurs cadres coexistent.
+     */
+    private static SelectorColor resolveTargetColor(SelectorColor requested, List<SelectorColor> presentColors) {
+        if (requested != SelectorColor.AUTO) {
+            if (!presentColors.contains(requested)) {
+                throw new IllegalArgumentException("La couleur demandée (" + requested + ") n'a pas été détectée.");
+            }
+            return requested;
+        }
+        if (presentColors.isEmpty()) {
+            throw new IllegalArgumentException("Aucun cadre d'annotation valide n'a été détecté dans le calque.");
+        }
+        if (presentColors.size() > 1) {
+            throw new IllegalStateException("Plusieurs cadres détectés : " + presentColors + ". Veuillez choisir la couleur.");
+        }
+        return presentColors.get(0);
+    }
+
+    /**
+     * Exécute le pipeline de découpage de zone.
+     *
+     * @param mapImg        Image de carte source.
+     * @param maskImg       Image de calque.
+     * @param territoryMask Masque du territoire global.
+     * @param extractor     Extracteur polychrome.
+     * @param targetColor   Couleur de l'annotation ciblée.
+     * @param config        Configuration de traitement.
+     * @return Masque de couverture continue résultant.
+     */
+    private static CoverageMask executeZoneSegmentation(BufferedImage mapImg, BufferedImage maskImg,
+                                                        BinaryMask territoryMask, ColorRegionSelectorExtractor extractor,
+                                                        SelectorColor targetColor, SnappingConfig config) {
+        BinaryMask interiorMask = extractor.extractInterior(maskImg, targetColor);
+        RoadDetector roadDetector = new RoadDetector();
+        BinaryMask roadCandidates = roadDetector.detectRoads(mapImg, config);
+        DarkDemarcationDetector darkDetector = new DarkDemarcationDetector();
+        BinaryMask darkDemarcations = darkDetector.detect(mapImg, maskImg, territoryMask);
+        ZoneBarrierConsolidator consolidator = new ZoneBarrierConsolidator();
+        BinaryMask consolidated = consolidator.consolidate(roadCandidates, darkDemarcations, territoryMask);
+        ZoneSegmentationEngine engine = new ZoneSegmentationEngine();
+        return engine.segmentZone(interiorMask, roadCandidates, consolidated, territoryMask, config);
+    }
+
+    /**
+     * Exécute le recalage de territoire global.
+     *
+     * @param mapImg        Image de carte source.
+     * @param territoryMask Masque du territoire global.
+     * @param config        Configuration de recalage.
+     * @return Masque de couverture continue résultant.
+     */
+    private static CoverageMask executeTerritorySnapping(BufferedImage mapImg, BinaryMask territoryMask, SnappingConfig config) {
+        RoadDetector roadDetector = new RoadDetector();
+        BinaryMask roadCandidates = roadDetector.detectRoads(mapImg, config);
+        RoadSnappingEngine engine = new RoadSnappingEngine();
+        return engine.snapCoverage(territoryMask, roadCandidates, config);
     }
 
     /**
