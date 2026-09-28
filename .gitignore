@@ -41,3 +41,8 @@ build/
 ### Node / Playwright ###
 node_modules/
 captures_maps/
+
+### Generated Runtime Images ###
+territory_mask_detected.png
+clipped.png
+refined_mask.png
