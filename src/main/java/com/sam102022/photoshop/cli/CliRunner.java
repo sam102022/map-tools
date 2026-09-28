@@ -84,7 +84,7 @@ public final class CliRunner {
 
         ImageLoader.validateDimensions(mapImg, maskImg);
 
-        BinaryMask territoryMask = resolveTerritoryMask(maskImg, territoryMaskPathStr);
+        BinaryMask territoryMask = resolveTerritoryMask(maskImg, territoryMaskPathStr, outputPathStr);
 
         ColorRegionSelectorExtractor colorExtractor = new ColorRegionSelectorExtractor();
         List<SelectorColor> presentColors = colorExtractor.detectPresentColors(maskImg);
@@ -136,28 +136,53 @@ public final class CliRunner {
     }
 
     /**
-     * Résout ou extrait le masque du territoire global.
+     * Résout ou extrait le masque du territoire global et enregistre une image de vérification.
      *
      * @param maskImg              Image du calque de limites.
      * @param territoryMaskPathStr Chemin optionnel vers le fichier de masque du territoire.
+     * @param outputPathStr        Chemin du fichier de sortie pour dériver le dossier cible.
      * @return Masque binaire du territoire global.
      * @throws IOException              si le chargement du fichier échoue.
      * @throws IllegalArgumentException si les dimensions du masque fourni diffèrent de maskImg.
      */
-    private static BinaryMask resolveTerritoryMask(BufferedImage maskImg, String territoryMaskPathStr) throws IOException {
+    private static BinaryMask resolveTerritoryMask(BufferedImage maskImg, String territoryMaskPathStr,
+                                                   String outputPathStr) throws IOException {
+        BinaryMask territoryMask;
         if (territoryMaskPathStr != null) {
             System.out.println("-> Chargement du masque de territoire fourni...");
             BufferedImage territoryImg = ImageLoader.load(Paths.get(territoryMaskPathStr));
             ImageLoader.validateDimensions(maskImg, territoryImg);
-            return BinaryMask.fromImage(territoryImg, 128);
+            territoryMask = BinaryMask.fromImage(territoryImg, 128);
+        } else {
+            System.out.println("-> Détection du masque vert du territoire...");
+            GreenMaskExtractor greenExtractor = new GreenMaskExtractor();
+            territoryMask = greenExtractor.extract(maskImg);
+            int active = territoryMask.countActivePixels();
+            System.out.printf("   %d pixels verts de territoire détectés.\n", active);
         }
 
-        System.out.println("-> Détection du masque vert du territoire...");
-        GreenMaskExtractor greenExtractor = new GreenMaskExtractor();
-        BinaryMask territoryMask = greenExtractor.extract(maskImg);
-        int active = territoryMask.countActivePixels();
-        System.out.printf("   %d pixels verts de territoire détectés.\n", active);
+        saveDetectedTerritoryMask(territoryMask, outputPathStr);
         return territoryMask;
+    }
+
+    /**
+     * Enregistre l'image noir et blanc du masque de territoire résolu pour vérification visuelle.
+     *
+     * @param territoryMask Masque binaire résolu du territoire.
+     * @param outputPathStr Chemin du fichier de sortie de détourage pour dériver le dossier cible.
+     */
+    private static void saveDetectedTerritoryMask(BinaryMask territoryMask, String outputPathStr) {
+        try {
+            Path outputDir = (outputPathStr != null && Paths.get(outputPathStr).getParent() != null)
+                    ? Paths.get(outputPathStr).getParent()
+                    : Paths.get("");
+            Path debugPath = outputDir.resolve("territory_mask_detected.png");
+            BufferedImage maskImage = ImageExporter.createMaskImage(territoryMask);
+            ImageExporter.savePng(maskImage, debugPath);
+            System.out.println("   [Vérification] Masque de territoire enregistré dans : " + debugPath.toAbsolutePath());
+        } catch (IOException e) {
+            System.err.println("   [Avertissement] Impossible d'enregistrer l'image de vérification du masque de territoire : " + e.getMessage());
+        }
     }
 
     /**

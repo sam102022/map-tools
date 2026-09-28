@@ -266,11 +266,30 @@ public class MainWindow extends JFrame {
      * @return Masque binaire du territoire global.
      */
     private static BinaryMask resolveTerritoryMask(BufferedImage maskImg, BufferedImage territoryImg) {
+        BinaryMask territoryMask;
         if (territoryImg != null) {
-            return BinaryMask.fromImage(territoryImg, 128);
+            territoryMask = BinaryMask.fromImage(territoryImg, 128);
+        } else {
+            GreenMaskExtractor greenExtractor = new GreenMaskExtractor();
+            territoryMask = greenExtractor.extract(maskImg);
         }
-        GreenMaskExtractor greenExtractor = new GreenMaskExtractor();
-        return greenExtractor.extract(maskImg);
+        saveDetectedTerritoryMask(territoryMask);
+        return territoryMask;
+    }
+
+    /**
+     * Enregistre l'image noir et blanc du masque de territoire résolu pour vérification visuelle.
+     *
+     * @param territoryMask Masque binaire résolu du territoire.
+     */
+    private static void saveDetectedTerritoryMask(BinaryMask territoryMask) {
+        try {
+            Path debugPath = Path.of("territory_mask_detected.png");
+            BufferedImage maskImage = ImageExporter.createMaskImage(territoryMask);
+            ImageExporter.savePng(maskImage, debugPath);
+        } catch (Exception ignored) {
+            // Tolérance d'écriture en environnement restreint
+        }
     }
 
     /**

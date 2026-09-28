@@ -530,4 +530,43 @@ class CliRunnerTest {
         assertTrue(outContent.toString().contains("Détection du cadre d'annotation de couleur RED"));
         assertTrue(outContent.toString().contains("Découpage de zone et exclusion stricte"));
     }
+
+    @Test
+    @DisplayName("Vérifier que le masque de territoire résolu est automatiquement exporté en image territory_mask_detected.png")
+    void testResolveTerritoryMaskSavesVerificationImage(@TempDir Path tempDir) throws Exception {
+        Path mapFile = tempDir.resolve("map.png");
+        Path maskFile = tempDir.resolve("mask.png");
+        Path outFile = tempDir.resolve("out.png");
+        Path maskOutFile = tempDir.resolve("mask_out.png");
+
+        int w = 50, h = 50;
+        BufferedImage map = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+        BufferedImage mask = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+
+        Graphics2D g = mask.createGraphics();
+        g.setColor(new Color(180, 235, 175)); // Vert clair territoire
+        g.fillRect(10, 10, 30, 30);
+        g.dispose();
+
+        ImageIO.write(map, "PNG", mapFile.toFile());
+        ImageIO.write(mask, "PNG", maskFile.toFile());
+
+        int exitCode = CliRunner.run(new String[]{
+                "--map", mapFile.toString(),
+                "--mask", maskFile.toString(),
+                "--output", outFile.toString(),
+                "--mask-out", maskOutFile.toString()
+        });
+
+        assertEquals(0, exitCode);
+        Path debugMaskPath = tempDir.resolve("territory_mask_detected.png");
+        assertTrue(debugMaskPath.toFile().exists(), "Le fichier territory_mask_detected.png doit exister dans le dossier de sortie");
+
+        BufferedImage savedDebugMask = ImageIO.read(debugMaskPath.toFile());
+        assertNotNull(savedDebugMask);
+        assertEquals(w, savedDebugMask.getWidth());
+        assertEquals(h, savedDebugMask.getHeight());
+        // Au centre (25, 25), le pixel doit être blanc (0xFFFFFF)
+        assertEquals(0xFFFFFF, savedDebugMask.getRGB(25, 25) & 0xFFFFFF, "Le pixel de territoire détecté doit être blanc");
+    }
 }
