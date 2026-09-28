@@ -64,16 +64,28 @@ public enum SelectorColor {
      * @return {@code true} si le pixel répond aux critères chromatiques stricts, {@code false} sinon.
      */
     public boolean matches(int r, int g, int b) {
-        if (isNoiseOrMapBackground(r, g, b)) {
+        int max = Math.max(r, Math.max(g, b));
+        int min = Math.min(r, Math.min(g, b));
+
+        // Luminosité minimale requise pour une couleur d'annotation vive
+        if (max < 80) {
             return false;
         }
 
+        int delta = max - min;
+        // Saturation minimale (delta / max >= 0.40 => delta * 100 >= 40 * max)
+        if (delta * 100 < 40 * max) {
+            return false;
+        }
+
+        int hue = computeHue(r, g, b, max, delta);
+
         return switch (this) {
-            case RED -> matchesRed(r, g, b);
-            case BLUE -> matchesBlue(r, g, b);
-            case MAGENTA -> matchesMagenta(r, g, b);
-            case CYAN -> matchesCyan(r, g, b);
-            case AUTO -> matchesAny(r, g, b);
+            case RED -> isRedHue(hue);
+            case BLUE -> isBlueHue(hue);
+            case MAGENTA -> isMagentaHue(hue);
+            case CYAN -> isCyanHue(hue);
+            case AUTO -> isRedHue(hue) || isBlueHue(hue) || isMagentaHue(hue) || isCyanHue(hue);
         };
     }
 
@@ -91,115 +103,72 @@ public enum SelectorColor {
     }
 
     /**
-     * Détermine si le pixel correspond à du bruit, un fond neutre ou un élément cartographique protégé.
+     * Calcule la teinte (Hue) en degrés [0..359] de manière exacte en arithmétique entière.
      *
-     * @param r Composante rouge.
-     * @param g Composante verte.
-     * @param b Composante bleue.
-     * @return {@code true} si le pixel doit être systématiquement écarté, {@code false} sinon.
+     * @param r     Composante rouge.
+     * @param g     Composante verte.
+     * @param b     Composante bleue.
+     * @param max   Valeur maximale parmi r, g, b.
+     * @param delta Différence (max - min).
+     * @return Teinte en degrés dans l'intervalle [0..359].
      */
-    private static boolean isNoiseOrMapBackground(int r, int g, int b) {
-        int max = Math.max(r, Math.max(g, b));
-        int min = Math.min(r, Math.min(g, b));
-
-        // Luminosité HSB < 0.20 (51 / 255 = 0.20)
-        if (max < 51) {
-            return true;
+    private static int computeHue(int r, int g, int b, int max, int delta) {
+        if (delta == 0) {
+            return 0;
         }
 
-        // Saturation HSB = (max - min) / max < 0.35 => (max - min) * 100 < 35 * max
-        if ((max - min) * 100 < 35 * max) {
-            return true;
+        int hue;
+        if (max == r) {
+            hue = (60 * (g - b)) / delta;
+            if (hue < 0) {
+                hue += 360;
+            }
+        } else if (max == g) {
+            hue = 120 + (60 * (b - r)) / delta;
+        } else {
+            hue = 240 + (60 * (r - g)) / delta;
         }
 
-        if (isGreenTerritory(r, g, b)) {
-            return true;
-        }
-
-        return isOrangeRoad(r, g, b);
+        return (hue % 360 + 360) % 360;
     }
 
     /**
-     * Vérifie si les composantes correspondent à la teinte verte du territoire.
+     * Vérifie si la teinte se situe dans le secteur du rouge vif.
      *
-     * @param r Composante rouge.
-     * @param g Composante verte.
-     * @param b Composante bleue.
-     * @return {@code true} si le pixel est identifié comme vert territoire.
+     * @param hue Teinte en degrés [0..359].
+     * @return {@code true} si la teinte est rouge.
      */
-    private static boolean isGreenTerritory(int r, int g, int b) {
-        return g > r + 20 && g > b + 20;
+    private static boolean isRedHue(int hue) {
+        return hue <= 18 || hue >= 342;
     }
 
     /**
-     * Vérifie si les composantes correspondent à une chaussée routière jaune ou orange Google Maps.
+     * Vérifie si la teinte se situe dans le secteur du bleu vif.
      *
-     * @param r Composante rouge.
-     * @param g Composante verte.
-     * @param b Composante bleue.
-     * @return {@code true} si le pixel est identifié comme route orange/jaune.
+     * @param hue Teinte en degrés [0..359].
+     * @return {@code true} si la teinte est bleue.
      */
-    private static boolean isOrangeRoad(int r, int g, int b) {
-        return r > 200 && g >= 130 && g <= 210 && b < 120;
+    private static boolean isBlueHue(int hue) {
+        return hue >= 205 && hue <= 255;
     }
 
     /**
-     * Vérifie le prédicat chromatique propre au rouge vif.
+     * Vérifie si la teinte se situe dans le secteur du magenta / violet.
      *
-     * @param r Composante rouge.
-     * @param g Composante verte.
-     * @param b Composante bleue.
-     * @return {@code true} si le pixel est un rouge vif d'annotation.
+     * @param hue Teinte en degrés [0..359].
+     * @return {@code true} si la teinte est magenta.
      */
-    private static boolean matchesRed(int r, int g, int b) {
-        return r >= 150 && r > g + 40 && r > b + 40;
+    private static boolean isMagentaHue(int hue) {
+        return hue >= 275 && hue <= 335;
     }
 
     /**
-     * Vérifie le prédicat chromatique propre au bleu vif.
+     * Vérifie si la teinte se situe dans le secteur du cyan / turquoise.
      *
-     * @param r Composante rouge.
-     * @param g Composante verte.
-     * @param b Composante bleue.
-     * @return {@code true} si le pixel est un bleu vif d'annotation.
+     * @param hue Teinte en degrés [0..359].
+     * @return {@code true} si la teinte est cyan.
      */
-    private static boolean matchesBlue(int r, int g, int b) {
-        return b >= 150 && b > r + 40 && b > g + 20;
-    }
-
-    /**
-     * Vérifie le prédicat chromatique propre au magenta.
-     *
-     * @param r Composante rouge.
-     * @param g Composante verte.
-     * @param b Composante bleue.
-     * @return {@code true} si le pixel est un magenta d'annotation.
-     */
-    private static boolean matchesMagenta(int r, int g, int b) {
-        return r >= 140 && b >= 140 && r > g + 40 && b > g + 40;
-    }
-
-    /**
-     * Vérifie le prédicat chromatique propre au cyan.
-     *
-     * @param r Composante rouge.
-     * @param g Composante verte.
-     * @param b Composante bleue.
-     * @return {@code true} si le pixel est un cyan d'annotation.
-     */
-    private static boolean matchesCyan(int r, int g, int b) {
-        return g >= 140 && b >= 140 && g > r + 40 && b > r + 40;
-    }
-
-    /**
-     * Vérifie si le pixel correspond à l'une quelconque des couleurs d'annotation supportées.
-     *
-     * @param r Composante rouge.
-     * @param g Composante verte.
-     * @param b Composante bleue.
-     * @return {@code true} si au moins une signature couleur est satisfaite.
-     */
-    private static boolean matchesAny(int r, int g, int b) {
-        return matchesRed(r, g, b) || matchesBlue(r, g, b) || matchesMagenta(r, g, b) || matchesCyan(r, g, b);
+    private static boolean isCyanHue(int hue) {
+        return hue >= 165 && hue <= 198;
     }
 }

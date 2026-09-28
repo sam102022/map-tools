@@ -76,11 +76,44 @@ public class ColorRegionSelectorExtractor {
         int[] counts = countConcreteColors(image);
         List<SelectorColor> detected = new ArrayList<>();
         for (int i = 0; i < CONCRETE_COLORS.size(); i++) {
-            if (counts[i] >= MIN_COLOR_PIXELS) {
-                detected.add(CONCRETE_COLORS.get(i));
+            SelectorColor color = CONCRETE_COLORS.get(i);
+            if (counts[i] >= MIN_COLOR_PIXELS && hasEnclosedInterior(image, color)) {
+                detected.add(color);
             }
         }
         return Collections.unmodifiableList(detected);
+    }
+
+    /**
+     * Vérifie si les pixels d'une couleur d'annotation forment un cadre fermé entourant une surface intérieure.
+     *
+     * @param image Image source.
+     * @param color Couleur d'annotation à tester.
+     * @return {@code true} si un intérieur clos d'au moins {@value #MIN_INTERIOR_PIXELS} pixels existe.
+     */
+    private boolean hasEnclosedInterior(BufferedImage image, SelectorColor color) {
+        int width = image.getWidth();
+        int height = image.getHeight();
+
+        BinaryMask rawSelectorMask = extractRawSelectorMask(image, color);
+        BinaryMask closedMask = MorphologyOps.close(rawSelectorMask, CLOSING_RADIUS);
+
+        boolean[] exteriorVisited = floodExterior(closedMask);
+        int interiorCount = 0;
+
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                int idx = y * width + x;
+                if (!exteriorVisited[idx] && !rawSelectorMask.get(x, y)) {
+                    interiorCount++;
+                    if (interiorCount >= MIN_INTERIOR_PIXELS) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
     }
 
     /**

@@ -7,14 +7,25 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import javax.imageio.ImageIO;
-import java.awt.*;
+import java.awt.Color;
+import java.awt.Graphics2D;
+import java.awt.Polygon;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.nio.file.Path;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+/**
+ * Tests unitaires et d'intégration pour {@link CliRunner}.
+ * <p>
+ * Valide le parsing d'options, les modes d'opération (auto, territory, zone),
+ * les sélecteurs de couleur, les alias courts et la gestion robuste des erreurs.
+ * </p>
+ */
 class CliRunnerTest {
 
     private final PrintStream originalOut = System.out;
@@ -84,10 +95,63 @@ class CliRunnerTest {
         int exitCode = CliRunner.run(new String[]{
                 "--map", "map.png",
                 "--mask", "mask.png",
-                "--snap-distance", "-10"
+                "--snap-distance", "0"
         });
         assertEquals(1, exitCode);
         assertTrue(errContent.toString().contains("Erreur de syntaxe ou de configuration"));
+    }
+
+    @Test
+    @DisplayName("Échec si un mode inconnu est spécifié")
+    void testInvalidModeOption() {
+        int exitCode = CliRunner.run(new String[]{
+                "--map", "map.png",
+                "--mask", "mask.png",
+                "--mode", "inconnu"
+        });
+        assertEquals(1, exitCode);
+        assertTrue(errContent.toString().contains("Mode d'opération non reconnu"));
+    }
+
+    @Test
+    @DisplayName("Échec si une couleur de zone inconnue est spécifiée")
+    void testInvalidZoneColorOption() {
+        int exitCode = CliRunner.run(new String[]{
+                "--map", "map.png",
+                "--mask", "mask.png",
+                "--zone-color", "jaune"
+        });
+        assertEquals(1, exitCode);
+        assertTrue(errContent.toString().contains("Couleur de sélection non reconnue"));
+    }
+
+    @Test
+    @DisplayName("Échec si la couleur demandée est absente du calque en mode zone")
+    void testRequestedZoneColorMissingFails(@TempDir Path tempDir) throws Exception {
+        Path mapFile = tempDir.resolve("map.png");
+        Path maskFile = tempDir.resolve("mask.png");
+
+        BufferedImage map = new BufferedImage(80, 80, BufferedImage.TYPE_INT_RGB);
+        BufferedImage mask = new BufferedImage(80, 80, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = mask.createGraphics();
+        g.setColor(new Color(180, 235, 175));
+        g.fillRect(10, 10, 60, 60);
+        g.setColor(new Color(230, 20, 20)); // Cadre rouge
+        g.drawRect(20, 20, 30, 30);
+        g.dispose();
+
+        ImageIO.write(map, "PNG", mapFile.toFile());
+        ImageIO.write(mask, "PNG", maskFile.toFile());
+
+        int exitCode = CliRunner.run(new String[]{
+                "--map", mapFile.toString(),
+                "--mask", maskFile.toString(),
+                "--mode", "zone",
+                "--zone-color", "blue"
+        });
+
+        assertEquals(1, exitCode);
+        assertTrue(errContent.toString().contains("n'a pas été détectée"));
     }
 
     @Test
@@ -212,5 +276,258 @@ class CliRunnerTest {
         });
         assertEquals(1, exitCode);
         assertTrue(errContent.toString().contains("Conflit"));
+    }
+
+    @Test
+    @DisplayName("Exécution réussie en mode zone avec sélecteur rouge")
+    void testModeZoneWithRedSelector(@TempDir Path tempDir) throws Exception {
+        Path mapFile = tempDir.resolve("map.png");
+        Path maskFile = tempDir.resolve("mask.png");
+        Path outFile = tempDir.resolve("zone_out.png");
+        Path maskOutFile = tempDir.resolve("mask_zone_out.png");
+
+        int w = 80, h = 80;
+        BufferedImage map = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+        BufferedImage mask = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+
+        // Fond vert territoire
+        Graphics2D g = mask.createGraphics();
+        g.setColor(new Color(180, 235, 175));
+        g.fillRect(10, 10, 60, 60);
+
+        // Tracé rouge fermé [20..50, 20..50]
+        g.setColor(new Color(230, 20, 20));
+        g.drawRect(20, 20, 30, 30);
+        g.dispose();
+
+        ImageIO.write(map, "PNG", mapFile.toFile());
+        ImageIO.write(mask, "PNG", maskFile.toFile());
+
+        int exitCode = CliRunner.run(new String[]{
+                "--map", mapFile.toString(),
+                "--mask", maskFile.toString(),
+                "--output", outFile.toString(),
+                "--mask-out", maskOutFile.toString(),
+                "--mode", "zone",
+                "--zone-color", "red"
+        });
+
+        assertEquals(0, exitCode);
+        assertTrue(outContent.toString().contains("Détection du cadre d'annotation"));
+        assertTrue(outContent.toString().contains("Découpage de zone et exclusion stricte"));
+        assertTrue(outFile.toFile().exists());
+    }
+
+    @Test
+    @DisplayName("Échec si le mode zone est forcé mais aucun cadre coloré n'est présent")
+    void testModeZoneWithoutFrameFails(@TempDir Path tempDir) throws Exception {
+        Path mapFile = tempDir.resolve("map.png");
+        Path maskFile = tempDir.resolve("mask.png");
+
+        BufferedImage map = new BufferedImage(40, 40, BufferedImage.TYPE_INT_RGB);
+        BufferedImage mask = new BufferedImage(40, 40, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = mask.createGraphics();
+        g.setColor(new Color(180, 230, 180));
+        g.fillRect(5, 5, 30, 30); // Vert uniquement, aucun cadre rouge
+        g.dispose();
+
+        ImageIO.write(map, "PNG", mapFile.toFile());
+        ImageIO.write(mask, "PNG", maskFile.toFile());
+
+        int exitCode = CliRunner.run(new String[]{
+                "--map", mapFile.toString(),
+                "--mask", maskFile.toString(),
+                "--mode", "zone"
+        });
+
+        assertEquals(1, exitCode);
+        assertTrue(errContent.toString().contains("aucun cadre"));
+    }
+
+    @Test
+    @DisplayName("Échec si plusieurs couleurs coexistent en mode AUTO sans précision de --zone-color")
+    void testMultiColorAmbiguityUnderAutoFails(@TempDir Path tempDir) throws Exception {
+        Path mapFile = tempDir.resolve("map.png");
+        Path maskFile = tempDir.resolve("mask.png");
+
+        int w = 120, h = 80;
+        BufferedImage map = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+        BufferedImage mask = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+
+        Graphics2D g = mask.createGraphics();
+        g.setColor(new Color(180, 235, 175));
+        g.fillRect(5, 5, 110, 70);
+
+        // Cadre rouge à gauche
+        g.setColor(new Color(230, 20, 20));
+        g.drawRect(10, 10, 30, 30);
+
+        // Cadre bleu à droite
+        g.setColor(new Color(20, 30, 230));
+        g.drawRect(60, 10, 30, 30);
+        g.dispose();
+
+        ImageIO.write(map, "PNG", mapFile.toFile());
+        ImageIO.write(mask, "PNG", maskFile.toFile());
+
+        int exitCode = CliRunner.run(new String[]{
+                "--map", mapFile.toString(),
+                "--mask", maskFile.toString(),
+                "--mode", "auto"
+        });
+
+        assertEquals(1, exitCode);
+        assertTrue(errContent.toString().contains("Plusieurs cadres"));
+    }
+
+    @Test
+    @DisplayName("Prise en charge réussie du masque de territoire via --territory-mask")
+    void testTerritoryMaskOption(@TempDir Path tempDir) throws Exception {
+        Path mapFile = tempDir.resolve("map.png");
+        Path maskFile = tempDir.resolve("mask.png");
+        Path tmFile = tempDir.resolve("territory.png");
+        Path outFile = tempDir.resolve("out_tm.png");
+        Path maskOutFile = tempDir.resolve("mask_tm.png");
+
+        int w = 60, h = 60;
+        BufferedImage map = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+        BufferedImage mask = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+        BufferedImage tm = new BufferedImage(w, h, BufferedImage.TYPE_BYTE_GRAY);
+
+        Graphics2D g = tm.createGraphics();
+        g.setColor(Color.WHITE);
+        g.fillRect(10, 10, 40, 40);
+        g.dispose();
+
+        ImageIO.write(map, "PNG", mapFile.toFile());
+        ImageIO.write(mask, "PNG", maskFile.toFile());
+        ImageIO.write(tm, "PNG", tmFile.toFile());
+
+        int exitCode = CliRunner.run(new String[]{
+                "--map", mapFile.toString(),
+                "--mask", maskFile.toString(),
+                "--territory-mask", tmFile.toString(),
+                "--output", outFile.toString(),
+                "--mask-out", maskOutFile.toString(),
+                "--mode", "territory"
+        });
+
+        assertEquals(0, exitCode);
+        assertTrue(outContent.toString().contains("Chargement du masque de territoire fourni"));
+    }
+
+    @Test
+    @DisplayName("Mode territory force le traitement territoire même si une annotation est présente")
+    void testModeTerritoryForcesTerritoryEvenWithAnnotation(@TempDir Path tempDir) throws Exception {
+        Path mapFile = tempDir.resolve("map.png");
+        Path maskFile = tempDir.resolve("mask.png");
+        Path outFile = tempDir.resolve("out_ter.png");
+        Path maskOutFile = tempDir.resolve("mask_ter.png");
+
+        int w = 60, h = 60;
+        BufferedImage map = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+        BufferedImage mask = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+
+        Graphics2D g = mask.createGraphics();
+        g.setColor(new Color(180, 235, 175));
+        g.fillRect(5, 5, 50, 50);
+        g.setColor(new Color(230, 20, 20)); // Tracé rouge d'annotation présent
+        g.drawRect(15, 15, 20, 20);
+        g.dispose();
+
+        ImageIO.write(map, "PNG", mapFile.toFile());
+        ImageIO.write(mask, "PNG", maskFile.toFile());
+
+        int exitCode = CliRunner.run(new String[]{
+                "--map", mapFile.toString(),
+                "--mask", maskFile.toString(),
+                "--output", outFile.toString(),
+                "--mask-out", maskOutFile.toString(),
+                "--mode", "territory"
+        });
+
+        assertEquals(0, exitCode);
+        // Doit exécuter le recalage géodésique de territoire et non le découpage de zone
+        assertTrue(outContent.toString().contains("Recalage géodésique sur les routes"));
+    }
+
+    @Test
+    @DisplayName("Prise en charge des alias courts -zc et -tm")
+    void testShortAliasesZcAndTm(@TempDir Path tempDir) throws Exception {
+        Path mapFile = tempDir.resolve("map.png");
+        Path maskFile = tempDir.resolve("mask.png");
+        Path tmFile = tempDir.resolve("tm.png");
+        Path outFile = tempDir.resolve("out_short.png");
+        Path maskOutFile = tempDir.resolve("mask_short.png");
+
+        int w = 80, h = 80;
+        BufferedImage map = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+        BufferedImage mask = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+        BufferedImage tm = new BufferedImage(w, h, BufferedImage.TYPE_BYTE_GRAY);
+
+        Graphics2D g = mask.createGraphics();
+        g.setColor(new Color(180, 235, 175));
+        g.fillRect(10, 10, 60, 60);
+        g.setColor(new Color(20, 30, 230)); // Tracé bleu fermé
+        g.drawRect(20, 20, 30, 30);
+        g.dispose();
+
+        Graphics2D gtm = tm.createGraphics();
+        gtm.setColor(Color.WHITE);
+        gtm.fillRect(10, 10, 60, 60);
+        gtm.dispose();
+
+        ImageIO.write(map, "PNG", mapFile.toFile());
+        ImageIO.write(mask, "PNG", maskFile.toFile());
+        ImageIO.write(tm, "PNG", tmFile.toFile());
+
+        int exitCode = CliRunner.run(new String[]{
+                "--map", mapFile.toString(),
+                "--mask", maskFile.toString(),
+                "--output", outFile.toString(),
+                "--mask-out", maskOutFile.toString(),
+                "--mode", "zone",
+                "-zc", "blue",
+                "-tm", tmFile.toString()
+        });
+
+        assertEquals(0, exitCode);
+        assertTrue(outContent.toString().contains("Détection du cadre d'annotation de couleur BLUE"));
+        assertTrue(outFile.toFile().exists());
+    }
+
+    @Test
+    @DisplayName("Mode AUTO bascule automatiquement en zone si un cadre unique est présent sans --zone-color")
+    void testModeAutoWithUniqueFrameSwitchesToZone(@TempDir Path tempDir) throws Exception {
+        Path mapFile = tempDir.resolve("map.png");
+        Path maskFile = tempDir.resolve("mask.png");
+        Path outFile = tempDir.resolve("out_auto_zone.png");
+        Path maskOutFile = tempDir.resolve("mask_auto_zone.png");
+
+        int w = 80, h = 80;
+        BufferedImage map = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+        BufferedImage mask = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+
+        Graphics2D g = mask.createGraphics();
+        g.setColor(new Color(180, 235, 175));
+        g.fillRect(10, 10, 60, 60);
+        g.setColor(new Color(230, 20, 20)); // Tracé rouge fermé unique
+        g.drawRect(20, 20, 30, 30);
+        g.dispose();
+
+        ImageIO.write(map, "PNG", mapFile.toFile());
+        ImageIO.write(mask, "PNG", maskFile.toFile());
+
+        int exitCode = CliRunner.run(new String[]{
+                "--map", mapFile.toString(),
+                "--mask", maskFile.toString(),
+                "--output", outFile.toString(),
+                "--mask-out", maskOutFile.toString(),
+                "--mode", "auto"
+        });
+
+        assertEquals(0, exitCode);
+        assertTrue(outContent.toString().contains("Détection du cadre d'annotation de couleur RED"));
+        assertTrue(outContent.toString().contains("Découpage de zone et exclusion stricte"));
     }
 }
