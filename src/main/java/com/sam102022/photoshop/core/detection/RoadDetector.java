@@ -32,7 +32,7 @@ public class RoadDetector {
             throw new IllegalArgumentException("La configuration ne peut pas être null.");
         }
 
-        BinaryMask candidates = new RoadCandidateDetector().detect(mapImage);
+        BinaryMask candidates = new RoadCandidateDetector().detect(mapImage, config.roadSensitivity());
         return config.closingRadius() == 0
                 ? candidates
                 : MorphologyOps.close(candidates, config.closingRadius());

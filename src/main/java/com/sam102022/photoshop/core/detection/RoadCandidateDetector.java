@@ -222,7 +222,7 @@ public class RoadCandidateDetector {
             int cx = startX + dx * step;
             int cy = startY + dy * step;
             if (cx < 0 || cx >= width || cy < 0 || cy >= height) {
-                return true;
+                return false;
             }
             if (lumData[cy * width + cx] <= MAX_BORDER_LUMINANCE) {
                 return true;

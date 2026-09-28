@@ -95,6 +95,32 @@ class RoadDetectorTest {
     }
 
     @Test
+    @DisplayName("Vérifier la prise en compte effective de roadSensitivity par RoadDetector")
+    void testRoadDetectorAppliesRoadSensitivity() {
+        int w = 20, h = 20;
+        BufferedImage map = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = map.createGraphics();
+        g.setColor(new Color(238, 230, 220));
+        g.fillRect(0, 0, w, h);
+        g.setColor(new Color(210, 210, 210));
+        g.drawLine(9, 0, 9, h - 1);
+        g.drawLine(11, 0, 11, h - 1);
+        g.setColor(new Color(233, 233, 233));
+        g.drawLine(10, 0, 10, h - 1);
+        g.dispose();
+
+        RoadDetector detector = new RoadDetector();
+        SnappingConfig lowSensConfig = SnappingConfig.builder().roadSensitivity(0.7f).build();
+        SnappingConfig highSensConfig = SnappingConfig.builder().roadSensitivity(1.5f).build();
+
+        BinaryMask lowResult = detector.detectRoads(map, lowSensConfig);
+        BinaryMask highResult = detector.detectRoads(map, highSensConfig);
+
+        assertFalse(lowResult.get(10, 5), "Basse sensibilité doit filtrer la rue peu contrastée");
+        assertTrue(highResult.get(10, 5), "Haute sensibilité doit détecter la rue peu contrastée");
+    }
+
+    @Test
     @DisplayName("Rejet des paramètres nulls")
     void testNullParametersThrow() {
         RoadDetector detector = new RoadDetector();
