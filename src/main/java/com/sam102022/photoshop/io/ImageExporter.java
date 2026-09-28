@@ -78,6 +78,7 @@ public final class ImageExporter {
      * @param mask   Masque de couverture source.
      * @param radius Rayon du filtre en pixels (>= 1).
      * @return Nouveau masque de couverture adouci.
+     * @throws IllegalArgumentException si mask est null.
      */
     public static CoverageMask smoothCoverage(CoverageMask mask, int radius) {
         if (mask == null) {
@@ -87,21 +88,44 @@ public final class ImageExporter {
             return mask;
         }
 
-        int w = mask.getWidth();
-        int h = mask.getHeight();
         int effectiveRadius = Math.min(radius, 5); // Limiter à 5 pour garantir la stabilité du noyau binomial
+        int[] kernel = computeBinomialKernel(effectiveRadius);
+        int shift = 2 * effectiveRadius;
 
-        int kernelSize = 2 * effectiveRadius + 1;
-        int[] kernel = new int[kernelSize];
+        int[] hPass = applyHorizontalBlurPass(mask, kernel, effectiveRadius, shift);
+        return applyVerticalBlurPass(hPass, mask.getWidth(), mask.getHeight(), kernel, effectiveRadius, shift);
+    }
+
+    /**
+     * Génère le noyau de convolution binomial normalisé d'ordre 2R.
+     *
+     * @param effectiveRadius Rayon effectif de lissage [1..5].
+     * @return Tableau des coefficients binomiaux de taille 2R + 1.
+     */
+    private static int[] computeBinomialKernel(int effectiveRadius) {
         int n = 2 * effectiveRadius;
+        int[] kernel = new int[n + 1];
         for (int k = 0; k <= n; k++) {
             kernel[k] = binomialCoeff(n, k);
         }
-        int shift = n;
-        int halfSum = 1 << (shift - 1);
+        return kernel;
+    }
 
-        // Passe horizontale
+    /**
+     * Exécute la passe horizontale du filtre séparable binomial sur la couverture.
+     *
+     * @param mask            Masque de couverture source.
+     * @param kernel          Noyau de convolution.
+     * @param effectiveRadius Rayon effectif de lissage.
+     * @param shift           Décalage binaire de normalisation.
+     * @return Tableau linéaire 1D des valeurs filtrées horizontalement.
+     */
+    private static int[] applyHorizontalBlurPass(CoverageMask mask, int[] kernel, int effectiveRadius, int shift) {
+        int w = mask.getWidth();
+        int h = mask.getHeight();
+        int halfSum = 1 << (shift - 1);
         int[] hPass = new int[w * h];
+
         for (int y = 0; y < h; y++) {
             int rowOffset = y * w;
             for (int x = 0; x < w; x++) {
@@ -113,9 +137,24 @@ public final class ImageExporter {
                 hPass[rowOffset + x] = (sum + halfSum) >> shift;
             }
         }
+        return hPass;
+    }
 
-        // Passe verticale
+    /**
+     * Exécute la passe verticale du filtre séparable binomial et peuple le masque de couverture résultant.
+     *
+     * @param hPass           Données issues de la passe horizontale.
+     * @param w               Largeur de l'image.
+     * @param h               Hauteur de l'image.
+     * @param kernel          Noyau de convolution.
+     * @param effectiveRadius Rayon effectif de lissage.
+     * @param shift           Décalage binaire de normalisation.
+     * @return Nouveau masque de couverture adouci.
+     */
+    private static CoverageMask applyVerticalBlurPass(int[] hPass, int w, int h, int[] kernel, int effectiveRadius, int shift) {
+        int halfSum = 1 << (shift - 1);
         CoverageMask result = new CoverageMask(w, h);
+
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
                 int sum = 0;
@@ -129,7 +168,6 @@ public final class ImageExporter {
                 }
             }
         }
-
         return result;
     }
 
@@ -150,6 +188,13 @@ public final class ImageExporter {
         return (int) res;
     }
 
+    /**
+     * Crée une image RVB en noir et blanc à partir d'un masque binaire (blanc = actif, noir = inactif).
+     *
+     * @param mask Masque binaire d'entrée.
+     * @return Image BufferedImage au format TYPE_INT_RGB.
+     * @throws IllegalArgumentException si mask est null.
+     */
     public static BufferedImage createMaskImage(BinaryMask mask) {
         if (mask == null) {
             throw new IllegalArgumentException("mask ne peut pas être null.");
@@ -166,7 +211,13 @@ public final class ImageExporter {
         return image;
     }
 
-    /** Creates a grayscale PNG mask that preserves fractional edge coverage. */
+    /**
+     * Crée une image en niveaux de gris (BYTE_GRAY) préservant les couvertures sub-pixel partielles [0..255].
+     *
+     * @param mask Masque de couverture continue d'entrée.
+     * @return Image BufferedImage en niveaux de gris au format TYPE_BYTE_GRAY.
+     * @throws IllegalArgumentException si mask est null.
+     */
     public static BufferedImage createCoverageMaskImage(CoverageMask mask) {
         if (mask == null) {
             throw new IllegalArgumentException("mask ne peut pas être null.");
@@ -180,6 +231,14 @@ public final class ImageExporter {
         return image;
     }
 
+    /**
+     * Enregistre une image au format PNG vers le chemin de destination spécifié.
+     *
+     * @param image      Image à sauvegarder.
+     * @param outputPath Chemin du fichier PNG de destination.
+     * @throws IOException              si l'écriture disque échoue.
+     * @throws IllegalArgumentException si image ou outputPath est null.
+     */
     public static void savePng(BufferedImage image, Path outputPath) throws IOException {
         if (image == null || outputPath == null) {
             throw new IllegalArgumentException("image et outputPath ne peuvent pas être null.");
