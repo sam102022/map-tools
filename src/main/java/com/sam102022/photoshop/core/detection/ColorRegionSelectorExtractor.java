@@ -94,11 +94,18 @@ public class ColorRegionSelectorExtractor {
     private boolean hasEnclosedInterior(BufferedImage image, SelectorColor color) {
         int width = image.getWidth();
         int height = image.getHeight();
+        int totalPixels = width * height;
 
         BinaryMask rawSelectorMask = extractRawSelectorMask(image, color);
-        BinaryMask closedMask = MorphologyOps.close(rawSelectorMask, CLOSING_RADIUS);
+        if (rawSelectorMask.countActivePixels() < MIN_COLOR_PIXELS) {
+            return false;
+        }
 
+        BinaryMask closedMask = MorphologyOps.close(rawSelectorMask, CLOSING_RADIUS);
         boolean[] exteriorVisited = floodExterior(closedMask);
+
+        // Seuil d'emprise minimale pour distinguer un cadre de zone des micro-poches de texte ou d'icônes cartographiques
+        int minRequiredInterior = Math.max(MIN_INTERIOR_PIXELS, (int) (totalPixels * 0.015));
         int interiorCount = 0;
 
         for (int y = 0; y < height; y++) {
@@ -106,7 +113,7 @@ public class ColorRegionSelectorExtractor {
                 int idx = y * width + x;
                 if (!exteriorVisited[idx] && !rawSelectorMask.get(x, y)) {
                     interiorCount++;
-                    if (interiorCount >= MIN_INTERIOR_PIXELS) {
+                    if (interiorCount >= minRequiredInterior) {
                         return true;
                     }
                 }

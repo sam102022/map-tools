@@ -149,7 +149,7 @@ public final class CliRunner {
             System.out.println("-> Chargement du masque de territoire fourni...");
             BufferedImage territoryImg = ImageLoader.load(Paths.get(territoryMaskPathStr));
             ImageLoader.validateDimensions(maskImg, territoryImg);
-            return convertToTerritoryMask(territoryImg);
+            return BinaryMask.fromImage(territoryImg, 128);
         }
 
         System.out.println("-> Détection du masque vert du territoire...");
@@ -158,44 +158,6 @@ public final class CliRunner {
         int active = territoryMask.countActivePixels();
         System.out.printf("   %d pixels verts de territoire détectés.\n", active);
         return territoryMask;
-    }
-
-    /**
-     * Convertit une image de masque de territoire (niveaux de gris, ARGB ou RGB) en {@link BinaryMask}.
-     *
-     * @param img Image source.
-     * @return Masque binaire seuillé à 128.
-     */
-    private static BinaryMask convertToTerritoryMask(BufferedImage img) {
-        int w = img.getWidth();
-        int h = img.getHeight();
-        BinaryMask mask = new BinaryMask(w, h);
-
-        boolean hasAlpha = img.getColorModel().hasAlpha();
-
-        for (int y = 0; y < h; y++) {
-            for (int x = 0; x < w; x++) {
-                int rgb = img.getRGB(x, y);
-                boolean active;
-                if (hasAlpha) {
-                    int alpha = (rgb >> 24) & 0xFF;
-                    int r = (rgb >> 16) & 0xFF;
-                    int g = (rgb >> 8) & 0xFF;
-                    int b = rgb & 0xFF;
-                    int lum = (int) Math.round(0.299 * r + 0.587 * g + 0.114 * b);
-                    active = alpha >= 128 && lum >= 128;
-                } else {
-                    int r = (rgb >> 16) & 0xFF;
-                    int g = (rgb >> 8) & 0xFF;
-                    int b = rgb & 0xFF;
-                    int lum = (int) Math.round(0.299 * r + 0.587 * g + 0.114 * b);
-                    active = lum >= 128;
-                }
-                mask.set(x, y, active);
-            }
-        }
-
-        return mask;
     }
 
     /**
