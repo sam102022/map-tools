@@ -9,6 +9,8 @@ package com.sam102022.photoshop.core.model;
  * @param seedErosionRadius Rayon de sécurité d'érosion pour la préservation du noyau intérieur profond (>= 0).
  * @param closingRadius     Rayon de fermeture morphologique pour unifier les sous-parcelles et combler les césures (>= 0).
  * @param antialiasing      Activation du suréchantillonnage sub-pixel et de l'anti-aliasing vectoriel.
+ * @param mode              Mode d'opération sélectionné (AUTO, TERRITORY ou ZONE).
+ * @param zoneColor         Couleur de l'annotation identifiant la zone interne ciblée (AUTO, RED, BLUE, etc.).
  */
 public record SnappingConfig(
         int snapDistance,
@@ -16,13 +18,15 @@ public record SnappingConfig(
         int smoothRadius,
         int seedErosionRadius,
         int closingRadius,
-        boolean antialiasing
+        boolean antialiasing,
+        OperationMode mode,
+        SelectorColor zoneColor
 ) {
 
     /**
      * Constructeur canonique compact validant les bornes strictes de chaque paramètre de configuration.
      *
-     * @throws IllegalArgumentException si un paramètre est négatif ou hors de son domaine de validité.
+     * @throws IllegalArgumentException si un paramètre est négatif, nul ou hors de son domaine de validité.
      */
     public SnappingConfig {
         if (snapDistance <= 0) {
@@ -40,10 +44,33 @@ public record SnappingConfig(
         if (closingRadius < 0) {
             throw new IllegalArgumentException("closingRadius doit être >= 0 : " + closingRadius);
         }
+        if (mode == null) {
+            throw new IllegalArgumentException("mode ne doit pas être null");
+        }
+        if (zoneColor == null) {
+            throw new IllegalArgumentException("zoneColor ne doit pas être null");
+        }
     }
 
     /**
-     * Constructeur de compatibilité historique à cinq paramètres (anti-aliasing activé par défaut).
+     * Constructeur de compatibilité à six paramètres (mode AUTO et zoneColor AUTO par défaut).
+     *
+     * @param snapDistance      Rayon maximal de recherche vers les axes routiers en pixels (> 0).
+     * @param roadSensitivity   Sensibilité chromatique des routes (> 0).
+     * @param smoothRadius      Rayon d'adoucissement des bords en pixels (>= 0).
+     * @param seedErosionRadius Rayon d'érosion du noyau intérieur (>= 0).
+     * @param closingRadius     Rayon de fermeture morphologique (>= 0).
+     * @param antialiasing      Activation de l'anti-aliasing sub-pixel.
+     * @throws IllegalArgumentException si les bornes de configuration sont enfreintes.
+     */
+    public SnappingConfig(int snapDistance, float roadSensitivity, int smoothRadius,
+                          int seedErosionRadius, int closingRadius, boolean antialiasing) {
+        this(snapDistance, roadSensitivity, smoothRadius, seedErosionRadius, closingRadius,
+                antialiasing, OperationMode.AUTO, SelectorColor.AUTO);
+    }
+
+    /**
+     * Constructeur de compatibilité historique à cinq paramètres (anti-aliasing activé par défaut, mode AUTO, couleur AUTO).
      *
      * @param snapDistance      Rayon maximal de recherche vers les axes routiers en pixels (> 0).
      * @param roadSensitivity   Sensibilité chromatique des routes (> 0).
@@ -54,16 +81,40 @@ public record SnappingConfig(
      */
     public SnappingConfig(int snapDistance, float roadSensitivity, int smoothRadius,
                           int seedErosionRadius, int closingRadius) {
-        this(snapDistance, roadSensitivity, smoothRadius, seedErosionRadius, closingRadius, true);
+        this(snapDistance, roadSensitivity, smoothRadius, seedErosionRadius, closingRadius,
+                true, OperationMode.AUTO, SelectorColor.AUTO);
     }
 
     /**
      * Retourne une instance de configuration initialisée avec les valeurs recommandées par défaut.
      *
-     * @return Configuration standard (snapDistance=40, roadSensitivity=1.0, smoothRadius=1, seedErosionRadius=8, closingRadius=2, antialiasing=true).
+     * @return Configuration standard (snapDistance=40, roadSensitivity=1.0, smoothRadius=1, seedErosionRadius=8,
+     * closingRadius=2, antialiasing=true, mode=AUTO, zoneColor=AUTO).
      */
     public static SnappingConfig defaults() {
-        return new SnappingConfig(40, 1.0f, 1, 8, 2, true);
+        return new SnappingConfig(40, 1.0f, 1, 8, 2, true, OperationMode.AUTO, SelectorColor.AUTO);
+    }
+
+    /**
+     * Retourne une nouvelle instance de configuration en mettant à jour le mode d'opération.
+     *
+     * @param mode Nouveau mode d'opération.
+     * @return Nouvelle instance de {@link SnappingConfig}.
+     */
+    public SnappingConfig withMode(OperationMode mode) {
+        return new SnappingConfig(snapDistance, roadSensitivity, smoothRadius, seedErosionRadius,
+                closingRadius, antialiasing, mode, zoneColor);
+    }
+
+    /**
+     * Retourne une nouvelle instance de configuration en mettant à jour la couleur de sélection de zone.
+     *
+     * @param zoneColor Nouvelle couleur d'annotation ciblée.
+     * @return Nouvelle instance de {@link SnappingConfig}.
+     */
+    public SnappingConfig withZoneColor(SelectorColor zoneColor) {
+        return new SnappingConfig(snapDistance, roadSensitivity, smoothRadius, seedErosionRadius,
+                closingRadius, antialiasing, mode, zoneColor);
     }
 
     /**
@@ -85,6 +136,8 @@ public record SnappingConfig(
         private int seedErosionRadius = 8;
         private int closingRadius = 2;
         private boolean antialiasing = true;
+        private OperationMode mode = OperationMode.AUTO;
+        private SelectorColor zoneColor = SelectorColor.AUTO;
 
         /**
          * Définit la distance maximale de recalage vers les routes en pixels.
@@ -153,13 +206,36 @@ public record SnappingConfig(
         }
 
         /**
+         * Définit le mode d'opération (AUTO, TERRITORY ou ZONE).
+         *
+         * @param mode Mode d'opération.
+         * @return Cette instance de constructeur.
+         */
+        public Builder mode(OperationMode mode) {
+            this.mode = mode;
+            return this;
+        }
+
+        /**
+         * Définit la couleur d'annotation ciblée pour le découpage de zone interne.
+         *
+         * @param zoneColor Couleur de sélection.
+         * @return Cette instance de constructeur.
+         */
+        public Builder zoneColor(SelectorColor zoneColor) {
+            this.zoneColor = zoneColor;
+            return this;
+        }
+
+        /**
          * Construit et valide l'instance immuable de {@link SnappingConfig}.
          *
          * @return Nouvelle configuration validée.
          * @throws IllegalArgumentException si des valeurs définies violent les règles de validation.
          */
         public SnappingConfig build() {
-            return new SnappingConfig(snapDistance, roadSensitivity, smoothRadius, seedErosionRadius, closingRadius, antialiasing);
+            return new SnappingConfig(snapDistance, roadSensitivity, smoothRadius,
+                    seedErosionRadius, closingRadius, antialiasing, mode, zoneColor);
         }
     }
 }
