@@ -118,6 +118,17 @@ public record SnappingConfig(
     }
 
     /**
+     * Retourne une nouvelle instance de configuration en activant ou désactivant l'anti-aliasing sub-pixel.
+     *
+     * @param antialiasing Vrai pour activer l'anti-aliasing, faux sinon.
+     * @return Nouvelle instance de {@link SnappingConfig}.
+     */
+    public SnappingConfig withAntialiasing(boolean antialiasing) {
+        return new SnappingConfig(snapDistance, roadSensitivity, smoothRadius, seedErosionRadius,
+                closingRadius, antialiasing, mode, zoneColor);
+    }
+
+    /**
      * Crée un nouveau constructeur fluide (Builder) pour assembler une configuration personnalisée.
      *
      * @return Nouvelle instance de {@link Builder}.
