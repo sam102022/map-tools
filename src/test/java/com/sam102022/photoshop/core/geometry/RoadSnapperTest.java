@@ -56,6 +56,62 @@ class RoadSnapperTest {
     }
 
     @Test
+    @DisplayName("Caler au bord intérieur (INNER) vs bord extérieur (OUTER) face à une route")
+    void testSnapInnerVsOuterEdge() {
+        int w = 50, h = 50;
+        BinaryMask roads = new BinaryMask(w, h);
+        // Route verticale de largeur 4 px à x=[25..28]
+        for (int y = 0; y < h; y++) {
+            for (int x = 25; x <= 28; x++) {
+                roads.set(x, y, true);
+            }
+        }
+
+        // Contour carré à gauche de la route : x=[10..20], y=[10..30]
+        List<Point> contour = List.of(
+                new Point(10, 10),
+                new Point(20, 10),
+                new Point(20, 30),
+                new Point(10, 30)
+        );
+
+        RoadSnapper snapper = new RoadSnapper();
+
+        // En mode OUTER : le bord droit à x=20 doit avancer jusqu'au bord extérieur x=29
+        List<Point> snappedOuter = snapper.snapContour(contour, roads, w, h, 15, SnapTargetEdge.OUTER);
+        assertEquals(29, snappedOuter.get(1).x, "Mode OUTER doit englober la route jusqu'à son bord extérieur (x=29)");
+
+        // En mode INNER : le bord droit à x=20 doit s'arrêter juste avant la route à x=24
+        List<Point> snappedInner = snapper.snapContour(contour, roads, w, h, 15, SnapTargetEdge.INNER);
+        assertEquals(24, snappedInner.get(1).x, "Mode INNER doit s'arrêter juste avant la route (x=24)");
+    }
+
+    @Test
+    @DisplayName("Rétraction en mode INNER si le sommet initial est déjà situé sur la chaussée")
+    void testSnapInnerEdgeRetractWhenStartingOnRoad() {
+        int w = 50, h = 50;
+        BinaryMask roads = new BinaryMask(w, h);
+        for (int y = 0; y < h; y++) {
+            for (int x = 20; x <= 25; x++) {
+                roads.set(x, y, true);
+            }
+        }
+
+        // Contour dont le sommet droit est déjà sur la route à x=22
+        List<Point> contour = List.of(
+                new Point(10, 10),
+                new Point(22, 10),
+                new Point(22, 30),
+                new Point(10, 30)
+        );
+
+        RoadSnapper snapper = new RoadSnapper();
+        List<Point> snappedInner = snapper.snapContour(contour, roads, w, h, 15, SnapTargetEdge.INNER);
+        // Doit être rétracté en arrière vers x=19 (hors de la route)
+        assertEquals(19, snappedInner.get(1).x, "Mode INNER doit rétracter le sommet hors de la route à x=19");
+    }
+
+    @Test
     @DisplayName("Rejet des arguments invalides")
     void testValidation() {
         RoadSnapper snapper = new RoadSnapper();
