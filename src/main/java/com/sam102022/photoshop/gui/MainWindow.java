@@ -361,6 +361,7 @@ public class MainWindow extends JFrame {
         BinaryMask interiorMask = extractor.extractInterior(maskImg, targetColor);
         RoadDetector roadDetector = new RoadDetector();
         BinaryMask roadCandidates = roadDetector.detectRoads(mapImg, config);
+        saveDetectedRoadsMask(roadCandidates);
         DarkDemarcationDetector darkDetector = new DarkDemarcationDetector();
         BinaryMask darkDemarcations = darkDetector.detect(mapImg, maskImg, territoryMask);
         ZoneBarrierConsolidator consolidator = new ZoneBarrierConsolidator();
@@ -380,8 +381,24 @@ public class MainWindow extends JFrame {
     private static CoverageMask executeTerritorySnapping(BufferedImage mapImg, BinaryMask territoryMask, SnappingConfig config) {
         RoadDetector roadDetector = new RoadDetector();
         BinaryMask roadCandidates = roadDetector.detectRoads(mapImg, config);
+        saveDetectedRoadsMask(roadCandidates);
         RoadSnappingEngine engine = new RoadSnappingEngine();
         return engine.snapCoverage(territoryMask, roadCandidates, config);
+    }
+
+    /**
+     * Enregistre l'image noir et blanc du masque des routes détectées pour vérification visuelle.
+     *
+     * @param roadCandidates Masque binaire des axes routiers détectés.
+     */
+    private static void saveDetectedRoadsMask(BinaryMask roadCandidates) {
+        try {
+            Path debugPath = Path.of("roads_detected.png");
+            BufferedImage maskImage = ImageExporter.createMaskImage(roadCandidates);
+            ImageExporter.savePng(maskImage, debugPath);
+        } catch (Exception ignored) {
+            // Tolérance d'écriture en environnement restreint
+        }
     }
 
     /**

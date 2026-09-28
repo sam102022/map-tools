@@ -569,4 +569,50 @@ class CliRunnerTest {
         // Au centre (25, 25), le pixel doit être blanc (0xFFFFFF)
         assertEquals(0xFFFFFF, savedDebugMask.getRGB(25, 25) & 0xFFFFFF, "Le pixel de territoire détecté doit être blanc");
     }
+
+    @Test
+    @DisplayName("Vérifier que les routes détectées sont automatiquement exportées en image roads_detected.png")
+    void testRoadsDetectedVerificationImageIsSaved(@TempDir Path tempDir) throws Exception {
+        Path mapFile = tempDir.resolve("map.png");
+        Path maskFile = tempDir.resolve("mask.png");
+        Path outFile = tempDir.resolve("out.png");
+        Path maskOutFile = tempDir.resolve("mask_out.png");
+
+        int w = 50, h = 50;
+        BufferedImage map = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+        BufferedImage mask = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+
+        Graphics2D gMap = map.createGraphics();
+        gMap.setColor(new Color(230, 226, 219));
+        gMap.fillRect(0, 0, w, h);
+        gMap.setColor(new Color(245, 165, 100)); // Autoroute orange
+        gMap.fillRect(20, 0, 6, h);
+        gMap.dispose();
+
+        Graphics2D gMask = mask.createGraphics();
+        gMask.setColor(new Color(180, 235, 175));
+        gMask.fillRect(10, 10, 30, 30);
+        gMask.dispose();
+
+        ImageIO.write(map, "PNG", mapFile.toFile());
+        ImageIO.write(mask, "PNG", maskFile.toFile());
+
+        int exitCode = CliRunner.run(new String[]{
+                "--map", mapFile.toString(),
+                "--mask", maskFile.toString(),
+                "--output", outFile.toString(),
+                "--mask-out", maskOutFile.toString()
+        });
+
+        assertEquals(0, exitCode);
+        Path debugRoadsPath = tempDir.resolve("roads_detected.png");
+        assertTrue(debugRoadsPath.toFile().exists(), "Le fichier roads_detected.png doit exister dans le dossier de sortie");
+
+        BufferedImage savedDebugRoads = ImageIO.read(debugRoadsPath.toFile());
+        assertNotNull(savedDebugRoads);
+        assertEquals(w, savedDebugRoads.getWidth());
+        assertEquals(h, savedDebugRoads.getHeight());
+        // Sur l'autoroute orange (22, 25), le pixel doit être blanc (0xFFFFFF)
+        assertEquals(0xFFFFFF, savedDebugRoads.getRGB(22, 25) & 0xFFFFFF, "La route détectée doit être blanche dans le masque");
+    }
 }

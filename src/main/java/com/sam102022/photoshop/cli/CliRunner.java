@@ -93,9 +93,9 @@ public final class CliRunner {
 
         if (shouldExecuteZoneMode(config.mode(), config.zoneColor(), presentColors)) {
             SelectorColor targetColor = resolveTargetColor(config.zoneColor(), presentColors);
-            finalCoverage = executeZoneWorkflow(mapImg, maskImg, territoryMask, colorExtractor, targetColor, config);
+            finalCoverage = executeZoneWorkflow(mapImg, maskImg, territoryMask, colorExtractor, targetColor, config, outputPathStr);
         } else {
-            finalCoverage = executeTerritoryWorkflow(mapImg, territoryMask, config);
+            finalCoverage = executeTerritoryWorkflow(mapImg, territoryMask, config, outputPathStr);
         }
 
         if (finalCoverage == null) {
@@ -265,11 +265,13 @@ public final class CliRunner {
      * @param extractor     Extracteur polychrome.
      * @param targetColor   Couleur de l'annotation ciblée.
      * @param config        Configuration de traitement.
+     * @param outputPathStr Chemin du fichier de sortie pour dériver le dossier cible.
      * @return Masque de couverture continue résultant.
      */
     private static CoverageMask executeZoneWorkflow(BufferedImage mapImg, BufferedImage maskImg,
                                                     BinaryMask territoryMask, ColorRegionSelectorExtractor extractor,
-                                                    SelectorColor targetColor, SnappingConfig config) {
+                                                    SelectorColor targetColor, SnappingConfig config,
+                                                    String outputPathStr) {
         System.out.printf("-> Détection du cadre d'annotation de couleur %s...\n", targetColor);
         BinaryMask interiorMask = extractor.extractInterior(maskImg, targetColor);
         System.out.printf("   Intérieur de zone identifié (%d pixels).\n", interiorMask.countActivePixels());
@@ -277,6 +279,7 @@ public final class CliRunner {
         System.out.println("-> Détection des axes routiers Google Maps...");
         RoadDetector roadDetector = new RoadDetector();
         BinaryMask roadCandidates = roadDetector.detectRoads(mapImg, config);
+        saveDetectedRoadsMask(roadCandidates, outputPathStr);
         System.out.printf("   %d pixels candidats routiers identifiés.\n", roadCandidates.countActivePixels());
 
         System.out.println("-> Détection des démarcations cartographiques sombres...");
@@ -299,10 +302,12 @@ public final class CliRunner {
      * @param mapImg        Image de carte.
      * @param territoryMask Masque du territoire.
      * @param config        Configuration de recalage.
+     * @param outputPathStr Chemin du fichier de sortie pour dériver le dossier cible.
      * @return Masque de couverture résultant, ou null si territoire vide.
      */
     private static CoverageMask executeTerritoryWorkflow(BufferedImage mapImg,
-                                                         BinaryMask territoryMask, SnappingConfig config) {
+                                                         BinaryMask territoryMask, SnappingConfig config,
+                                                         String outputPathStr) {
         if (territoryMask.countActivePixels() == 0) {
             System.err.println("Attention : Aucun pixel vert trouvé dans le masque.");
             return null;
@@ -311,6 +316,7 @@ public final class CliRunner {
         System.out.println("-> Détection des axes routiers Google Maps...");
         RoadDetector roadDetector = new RoadDetector();
         BinaryMask roadCandidates = roadDetector.detectRoads(mapImg, config);
+        saveDetectedRoadsMask(roadCandidates, outputPathStr);
         System.out.printf("   %d pixels candidats routiers identifiés.\n", roadCandidates.countActivePixels());
 
         System.out.println("-> Recalage géodésique sur les routes...");
@@ -319,6 +325,26 @@ public final class CliRunner {
         BinaryMask snappedMask = coverageMask.toBinaryMask(128);
         System.out.printf("   %d pixels conservés après recalage.\n", snappedMask.countActivePixels());
         return coverageMask;
+    }
+
+    /**
+     * Enregistre l'image noir et blanc du masque des routes détectées pour vérification visuelle.
+     *
+     * @param roadCandidates Masque binaire des axes routiers détectés.
+     * @param outputPathStr  Chemin du fichier de sortie de détourage pour dériver le dossier cible.
+     */
+    private static void saveDetectedRoadsMask(BinaryMask roadCandidates, String outputPathStr) {
+        try {
+            Path outputDir = (outputPathStr != null && Paths.get(outputPathStr).getParent() != null)
+                    ? Paths.get(outputPathStr).getParent()
+                    : Paths.get("");
+            Path debugPath = outputDir.resolve("roads_detected.png");
+            BufferedImage maskImage = ImageExporter.createMaskImage(roadCandidates);
+            ImageExporter.savePng(maskImage, debugPath);
+            System.out.println("   [Vérification] Masque des routes enregistré dans : " + debugPath.toAbsolutePath());
+        } catch (IOException e) {
+            System.err.println("   [Avertissement] Impossible d'enregistrer l'image de vérification des routes : " + e.getMessage());
+        }
     }
 
     /**
