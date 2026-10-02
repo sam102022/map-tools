@@ -85,7 +85,7 @@ public final class PolygonRasterizer {
         if (points == null || points.size() < 3) {
             return;
         }
-        PixelPoint first = points.get(0);
+        PixelPoint first = points.getFirst();
         path.moveTo(first.x(), first.y());
         for (int i = 1; i < points.size(); i++) {
             PixelPoint pt = points.get(i);

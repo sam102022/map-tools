@@ -7,12 +7,40 @@ Ce document définit le découpage opérationnel en 6 sprints incrémentaux pour
 ## 🗺️ Vue d'Ensemble du Pipeline V2
 
 ```text
-Sprint 1 (Géométrie & Projection)   ──►  Polygone pixel P
-Sprint 2 (Détection des Routes)     ──►  RoadMask R & Rclosed
-Sprint 3 (Cellules & CellGraph)     ──►  Cellules 4-connexes + Adjacences
-Sprint 4 (Vote Topologique)         ──►  CellSelection (INSIDE / OUTSIDE / PARTIAL)
-Sprint 5 (Expansion Géodésique MCP) ──►  Masque final avec ronds-points englobés
-Sprint 6 (Anti-Aliasing & CLI V2)   ──►  Pipeline complet de production RGBA
+SPRINT 1 (Géométrie & Projection)
+        │
+        ▼
+   PolygonMask P
+        │
+SPRINT 2 (Détection des Routes & Topologie)
+        │
+        ▼
+ RoadMask R + Rclosed
+        │
+SPRINT 3 (Cellules & CellGraph)
+        │
+        ▼
+ Cells + RoadInterfaces + Adjacencies
+        │
+SPRINT 4 (Vote Topologique)
+        │
+        ▼
+   CellSelection (INSIDE / OUTSIDE / PARTIAL)
+        │
+SPRINT 5 (Reconstruction des Frontières Routières & Expansion Géodésique)
+        │
+        ├── BoundaryRoadExtractor
+        ├── RoadDistanceTransform
+        ├── GeodesicRoadExpander
+        └── TopologicalIslandResolver
+        │
+        ▼
+     FinalMask
+        │
+SPRINT 6 (Rendu Sub-Pixel & CLI V2)
+        │
+        ▼
+ RGBA + diagnostics + CLI
 ```
 
 ---
@@ -30,24 +58,25 @@ Sprint 6 (Anti-Aliasing & CLI V2)   ──►  Pipeline complet de production RG
 ---
 
 ## 🛣️ Sprint 2 : Détection Colorimétrique des Routes & Fermeture Topologique
-* **Objectif :** Générer le `RoadMask` binaire à partir du style de carte Google (`05_style_contraste_sans_rien.png`) ou du flux OSM, avec garantie de fermeture topologique.
+* **Objectif :** Générer le `RoadMask` binaire à partir du style de carte Google (`05_style_contraste_sans_rien.png`) ou du flux OSM, avec garantie de fermeture topologique et respect strict de la géométrie routière réelle (*ne jamais inventer une route et ne jamais supprimer une route réelle sans justification*).
 * **Package cible :** `com.sam102022.photoshop.v2.road`
 * **Livrables :**
   * `RoadDetectorStyle` : extraction colorimétrique robuste des axes routiers (règles delta RVB bleu-gris issues de `script.py` : `(b-r) >= 12`, `2 <= (b-g) <= 22`, `r < 228`).
   * `RoadDetectorOsm` : rasterisation des segments vectoriels OSM avec largeur théorique.
-  * `RoadCleaner` : ouverture morphologique ultra-fine ($2\times2$) pour retirer le bruit/icônes, suivie d'une fermeture topologique minimale (rayon 1 px) pour colmater les coupures d'un pixel (`Rclosed`).
-* **Critère de validation :** Comparaison pixel par pixel du `RoadMask` généré avec l'image témoin `maps/road.png` générée par le prototype Python.
+  * `RoadMaskCleaner` : nettoyage minimal du masque routier afin de supprimer uniquement les artefacts ponctuels identifiés (nettoyage très conservateur pour ne supprimer aucune petite route réelle), puis fermeture topologique minimale (rayon 1 px) pour colmater les discontinuités dues à l'anti-aliasing (`Rclosed`).
+* **Critère de validation :** Comparaison pixel par pixel du `RoadMask` généré avec l'image témoin `maps/road.png` générée par le prototype Python et vérification de la préservation intégrale des axes secondaires.
 
 ---
 
 ## 🧱 Sprint 3 : Segmentation en Cellules (4-connexité) & `CellGraph`
-* **Objectif :** Découper l'espace complémentaire des routes (`¬Rclosed`) en îlots urbains/parcelles disjoints et construire la topologie d'adjacence.
+* **Objectif :** Découper l'espace complémentaire des routes (`¬Rclosed`) en îlots urbains/parcelles disjoints et construire la topologie d'adjacence enrichie par les interfaces routières locales.
 * **Package cible :** `com.sam102022.photoshop.v2.cell`
 * **Livrables :**
   * `CellLabeler` : composantes connexes en **4-connexité stricte** sur `¬Rclosed` (chiffre 0 = route, $1..N$ = cellules).
-  * `Cell(id, area, bounds, centroid, polygonCoverage, state)`
-  * `CellGraph` & `CellAdjacency` : identification des frontières routières séparant deux cellules voisines (`Cell A ── Road R ── Cell B`).
-* **Critère de validation :** Détection d'exactement $N$ cellules fermées sur `Territoire CA01`, confirmation de l'étanchéité 4-connexe (aucun pont diagonal).
+  * `Cell(id, area, bounds, centroid)`
+  * `RoadInterface` : identification et extraction des portions localisées de chaussée reliant deux cellules adjacentes.
+  * `CellGraph` : modélisation structurelle explicite des relations de voisinage traversant le réseau routier (`Cell A ── RoadInterface R ── Cell B`) permettant d'identifier précisément les routes frontières lors des étapes d'expansion.
+* **Critère de validation :** Détection d'un ensemble déterministe de cellules sur le territoire CA01 et vérification de leur cohérence topologique (confirmation de l'étanchéité 4-connexe sans ponts diagonaux, indexation exacte des interfaces routières adjacentes).
 
 ---
 
@@ -61,28 +90,373 @@ Sprint 6 (Anti-Aliasing & CLI V2)   ──►  Pipeline complet de production RG
     * `OUTSIDE` si $\le 0.05$ (rejetée à 100%).
     * `PARTIAL` entre 0.05 et 0.60.
   * `PartialCellResolver` : conservation de $C \cap P$ pour les grandes cellules ouvertes (parcs, forêts, champs sans route de clôture) et détection des cellules touchant les bords de l'image.
-  * `CellSelection` : synthèse du vote.
-* **Critère de validation :** Taux de décision conforme aux 21 cellules retenues et 6 partielles observées sur le prototype Python de référence.
+  * `CellSelection` : synthèse du vote (IDs des cellules `inside`, `outside`, `partial` et masques associés).
+* **Critère de validation :** Décision déterministe et cohérente sur l'ensemble des cellules de référence (`CA01`), avec conservation appropriée des cellules fermées et découpe géométrique nette des cellules partielles ouvertes.
 
 ---
 
-## 🌊 Sprint 5 : Expansion Géodésique Bornée (MCP) & Enrobage des Ronds-Points
-* **Objectif :** Attacher les routes frontières au territoire en étendant le front jusqu'au bord extérieur réel de la chaussée et combler les ronds-points.
+## 🌊 Sprint 5 : Reconstruction des Frontières Routières & Expansion Géodésique
+* **Objectif :** Passer de `CellSelection` + `CellGraph` + `BoundaryRoads` à `FinalMask`, en intégrant les routes frontières jusqu'à leur bordure extérieure réelle et en résolvant topologiquement les îlots et ronds-points.
+* **Principe d'enchaînement :**
+  $$\text{RoadMask} \longrightarrow \text{RoadInterface} \longrightarrow \text{BoundaryRoad} \longrightarrow \text{Distance Transform (hw)} \longrightarrow \text{Geodesic Expansion} \longrightarrow \text{Final Boundary}$$
 * **Package cible :** `com.sam102022.photoshop.v2.expansion`
 * **Livrables :**
-  * `BoundaryRoadExtractor` : extraction des composantes routières reliant une cellule `INSIDE` à une cellule `OUTSIDE`.
-  * `RoadDistanceTransform` : calcul de la carte de demi-largeur locale $hw(x, y)$ sur la chaussée.
-  * `GeodesicRoadExpander` (MCP / Dijkstra) : propagation contrainte à la route depuis le bord des cellules retenues avec coût géométrique borné à $d_G \le 2 \times hw + \varepsilon$.
-  * `IslandHoleFiller` : fermeture des trous résiduels fermés $\le 15\,000\text{ px}$ (centres de ronds-points et terre-pleins).
-* **Critère de validation :** Alignement parfait de la frontière sur le bord extérieur des routes, ronds-points 100% pleins, absence totale de fuite vers les routes extérieures.
+  * `BoundaryRoadExtractor` : extraction et classification des interfaces routières reliant une cellule `INSIDE` à une cellule `OUTSIDE` (ou séparant deux zones contiguës en mode `ZONE`).
+  * `RoadDistanceTransform` : calcul de la carte de demi-largeur locale $hw(x, y)$ sur la chaussée par transformée de distance euclidienne.
+  * `GeodesicRoadExpander` (MCP / Dijkstra) : propagation contrainte à la surface routière depuis le bord des cellules retenues avec coût géométrique borné par $d_G \le 2 \times hw + \varepsilon$ (utilisé comme **borne de propagation** et non comme définition directe ou géométrique de la frontière finale).
+  * `TopologicalIslandResolver` : résolution et absorption topologique des îlots intérieurs et ronds-points basée sur la structure du `CellGraph` (ex. une cellule ou îlot résiduel entièrement ceinturé par des `BoundaryRoads` est déterministement absorbé ; la taille pouvant servir de critère secondaire de sécurité, mais jamais d'heuristique de seuil fixe comme $\le 15\,000\text{ px}$).
+* **Critère de validation :**
+  * Intégration rigoureuse des `BoundaryRoads` jusqu'au bord extérieur de la chaussée ;
+  * Les routes séparant deux zones internes respectent la règle de partage médian en mode `ZONE` ;
+  * Résolution topologique des ronds-points et îlots sans heuristique de taille magique ;
+  * Absence totale de fuite vers les cellules ou routes extérieures (`OUTSIDE`).
 
 ---
 
 ## 🎨 Sprint 6 : Rendu Sub-Pixel (Anti-Aliasing), Export RGBA & Intégration CLI
-* **Objectif :** Produire les livrables graphiques finaux anti-aliasés et rendre le pipeline V2 accessible en ligne de commande.
+* **Objectif :** Produire les livrables graphiques finaux anti-aliasés et rendre le pipeline V2 accessible en ligne de commande avec des critères de validation mesurables.
 * **Package cible :** `com.sam102022.photoshop.v2.render` / `com.sam102022.photoshop.cli`
 * **Livrables :**
-  * `SubpixelAlphaRenderer` : lissage gaussien localisé sur la frontière du masque ($\sigma \approx 0.8$) pour reproduire l'anti-aliasing sub-pixel natif de Google Maps.
+  * `SubpixelAlphaRenderer` : génération d'une transition alpha sub-pixel localisée autour de la frontière géométrique afin d'obtenir un rendu visuellement cohérent avec l'anti-aliasing de la carte source (sans prétendre modéliser le mécanisme interne propriétaire de Google Maps).
   * `ImageClipper` : assemblage RGBA 32-bit de l'image détourée finale (`clipped.png`), du masque alpha (`mask.png`) et de l'overlay de diagnostic avec contour rouge (`overlay.png`).
-  * `V2CliRunner` : commande CLI dédiée (ex: `--v2` ou nouveau binaire) avec paramètres documentés.
-* **Critère de validation :** Exécution complète en $\le 5$ secondes sur `Territoire CA01`, inspection visuelle confirmant une découpe strictement identique au résultat de `script.py`.
+  * `V2CliRunner` : commande CLI dédiée (ex: `--v2` ou binaire dédié) avec paramètres documentés.
+* **Critère de validation final :**
+  * Pipeline complet exécuté en $\le 5$ secondes sur `Territoire CA01` ;
+  * Aucune fuite vers les cellules `OUTSIDE` ;
+  * Les `BoundaryRoads` sont correctement intégrées ;
+  * Les routes séparant deux zones restent neutres en mode `ZONE` ;
+  * Les îlots/ronds-points sont résolus par la topologie ;
+  * La frontière finale est strictement cohérente avec le `RoadMask` ;
+  * Rendu visuellement équivalent ou amélioré par rapport au prototype Python ;
+  * Critères quantitatifs mesurables : IoU V2 vs référence, distance frontière (Hausdorff) et écart de surface.
+
+---
+
+## 🔒 Compléments de Spécification — Contrats et Zones d'Ombre V2
+
+### 1. Définition Opérationnelle de `RoadInterface`
+
+#### Problème
+Le `RoadMask` complet peut constituer une unique composante connexe, notamment lorsque plusieurs routes se rejoignent au niveau des carrefours.
+Il ne faut donc pas définir l'élément de liaison comme une composante connexe globale du `RoadMask`.
+
+#### Définition V2
+On introduit la notion de **`RoadInterface`**.
+Une `RoadInterface` représente une portion localisée de chaussée constituant la frontière entre deux cellules adjacentes.
+
+```text
+             RoadInterface
+                  ↓
+Cell A ████████████████ Cell B
+       ← chaussée →
+```
+
+Elle est déterminée à partir de la relation topologique locale :
+$$\text{Cell A} \longleftrightarrow \text{RoadInterface R} \longleftrightarrow \text{Cell B}$$
+et non à partir d'une simple composante connexe globale du réseau routier.
+
+#### Contrat Java
+```java
+public record RoadInterface(
+        int id,
+        int cellA,
+        int cellB,
+        BinaryMask mask,
+        long area
+) {
+}
+```
+Avec les invariants stricts :
+* `cellA != cellB`
+* `mask ⊆ RoadMask`
+
+Une même composante routière globale peut donc contenir plusieurs `RoadInterface`.
+
+#### Conséquence Structurelle
+Le `CellGraph` devient :
+```text
+Cell A
+   │
+   │ RoadInterface #12
+   │
+Cell B
+   │
+   │ RoadInterface #13
+   │
+Cell C
+```
+et non `Cell A ─── RoadComponent globale ─── Cell B`.
+C'est cette distinction fondamentale qui permet de traiter proprement les carrefours et les ronds-points.
+
+#### Définition de la Frontière de Cellule au Niveau Pixel & Construction de `RoadInterface`
+Une `RoadInterface` est constituée des pixels routiers qui sont topologiquement accessibles depuis les frontières immédiates de Cell A et Cell B :
+```text
+Non-road
+    │
+    ├── Cell A
+    │
+    └── Cell B
+```
+Procédure déterministe d'attribution des pixels routiers :
+```text
+RoadMask
+   │
+   ▼
+Cell labels (1..N)
+   │
+   ▼
+Pour chaque pixel route r :
+   rechercher les cellules voisines
+   │
+   ├── {A, B} ──► assigné à l'interface A-B
+   ├── {A}    ──► bord de route de A (sans vis-à-vis immédiat)
+   └── {}     ──► route interne / carrefour / artefact
+```
+Cette approche est infiniment plus robuste qu'un simple `connectedComponents(RoadMask)` pour délimiter les tronçons de chaussée.
+
+---
+
+### 2. Contrats I/O Explicites Entre les Sprints
+
+Chaque sprint dispose d'un contrat d'entrée/sortie explicite et immuable sous forme de Java Records (conformément à l'[ADR-004](adr/ADR-004-immutabilite-de-la-configuration-via-records-snappingconfig.md)), garantissant que chaque étape puisse être développée et testée indépendamment avec des fixtures ou des mocks.
+
+#### Sprint 1 ➔ Sprint 2 / 3 / 4 : `PolygonMask`
+```java
+public record PolygonMask(
+        int width,
+        int height,
+        BinaryMask mask
+) {
+}
+```
+* **Contenu :** $P[x, y] \in \{0, 1\}$
+* Représente uniquement la géométrie d'intention issue du JSON.
+
+#### Sprint 2 ➔ Sprint 3 : `RoadMask`
+```java
+public record RoadMask(
+        int width,
+        int height,
+        BinaryMask raw,
+        BinaryMask closed
+) {
+}
+```
+* **Champs :**
+  * `raw` : masque routier extrait colorimétriquement
+  * `closed` : masque après fermeture topologique minimale (rayon 1 px)
+* **Invariant :** `closed != nouvelle géométrie routière`. La fermeture sert uniquement à corriger les discontinuités ponctuelles dues au rendu et à l'anti-aliasing sans épaissir artificiellement les voies.
+
+#### Sprint 3 ➔ Sprint 4 : `CellGraph`
+```java
+public record Cell(
+        int id,
+        long area,
+        Bounds bounds,
+        PixelPoint centroid
+) {
+}
+
+public record CellGraph(
+        List<Cell> cells,
+        List<RoadInterface> roadInterfaces
+) {
+}
+```
+* **Principe de responsabilité :** La cellule stocke uniquement sa géométrie intrinsèque. La couverture par le polygone d'intention $P$ est calculée lors du Sprint 4 par `CellCoverageCalculator` plutôt que pré-calculée dans `Cell` :
+  $$\text{Cell} \longrightarrow \text{CellCoverageCalculator} \longrightarrow \text{CellClassifier}$$
+
+#### Sprint 4 ➔ Sprint 5 : `CellSelection`
+```java
+public record CellSelection(
+        Set<Integer> inside,
+        Set<Integer> outside,
+        Set<Integer> partial,
+        Map<Integer, BinaryMask> partialMasks
+) {
+}
+```
+* **Justification des identifiants (`Set<Integer>`) :** L'usage des IDs évite tout couplage fort avec l'instance de `Cell` et garantit une sérialisation/manipulation légère et découplée :
+  $$\text{CellGraph} \longrightarrow \text{CellSelection} \longrightarrow \text{BoundaryReconstruction}$$
+
+#### Sprint 5 ➔ Sprint 6 : `FinalMask`
+```java
+public record FinalMask(
+        int width,
+        int height,
+        BinaryMask mask
+) {
+}
+```
+* **Principe d'isolation géométrie / rendu :** À ce stade, aucune notion d'alpha ou d'anti-aliasing n'est présente :
+  $$\text{FinalMask} \longrightarrow \text{SubpixelAlphaRenderer} \longrightarrow \text{Image RGBA}$$
+* **Invariant respecté :** *La décision géométrique ne dépend jamais du rendu.*
+
+---
+
+### 3. Formalisation des Modes `TERRITORY` et `ZONE`
+
+Le Sprint 5 adapte sa stratégie de reconstruction selon le mode d'opération :
+
+```java
+public enum OperationMode {
+    TERRITORY,
+    ZONE
+}
+
+public record BoundaryReconstructionOptions(
+        OperationMode mode,
+        RoadExpansionPolicy expansionPolicy
+) {
+}
+```
+
+#### Mode TERRITORY (Détourage d'un territoire complet)
+Une interface routière reliant l'intérieur et l'extérieur :
+$$\text{INSIDE} \longleftrightarrow \text{RoadInterface} \longleftrightarrow \text{OUTSIDE}$$
+constitue une `BoundaryRoad`.
+Elle est absorbée dans le territoire **jusqu'au bord extérieur de la chaussée** :
+
+```text
+        OUTSIDE
+────────────────────
+      ROAD
+████████████████████
+        INSIDE
+████████████████████
+
+Résultat final :
+████████████████████
+████████████████████
+        ↑
+  territoire final (englobe la route jusqu'à son bord extérieur)
+```
+La propagation géodésique contrainte permet d'épouser la largeur réelle de la chaussée sans largeur arbitraire.
+
+#### Mode ZONE (Découpage de zones internes contiguës)
+Une route séparant deux zones internes :
+$$\text{Zone 1} \longleftrightarrow \text{RoadInterface} \longleftrightarrow \text{Zone 2}$$
+ne doit pas être absorbée intégralement par les deux zones (ce qui causerait un recouvrement illégal).
+
+On applique une **règle de partage de la chaussée** :
+$$\text{Zone 1} \mid \text{Moitié gauche de la route} \mid \text{Moitié droite de la route} \mid \text{Zone 2}$$
+avec une frontière positionnée le long de **l'axe médian** de la chaussée :
+
+```text
+       Zone 1
+████████████│
+            │ ROAD
+────────────┼──────────── (axe médian de partage)
+            │
+            │
+            │ Zone 2
+```
+* **Distinction obligatoire :**
+  * `INSIDE ── ROAD ── OUTSIDE` ➔ Absorption intégrale jusqu'au bord extérieur de la chaussée.
+  * `ZONE A ── ROAD ── ZONE B` ➔ Partage équitable à mi-chaussée (axe médian).
+
+---
+
+### 4. Fixture d'Intégration Pivot (`CA01_V2_REFERENCE`)
+
+Le cas d'usage réel `Territoire CA01` sert de banc d'essai étalon (Golden Fixture) :
+* **Identifiant :** `CA01_V2_REFERENCE`
+* **Entrées :**
+  * Métadonnées et polygone : `maps/captures_maps/Territoire CA01/01_plan_avec_territoires.json`
+  * Image source de contraste : `maps/captures_maps/Territoire CA01/05_style_contraste_sans_rien.png`
+* **Paramètres cartographiques réels vérifiés :**
+  * Territoire : `CA01`
+  * Dimensions réelles : **$3810 \times 2130\text{ px}$**
+  * Zoom : **$17$**
+  * Coordonnées centre : **$\text{lat}=47.269135$, $\text{lng}=-1.506505$**
+* **Dossier de référence :**
+  ```text
+  src/test/resources/v2/
+      fixtures/
+          CA01/
+              01_plan_avec_territoires.json
+              05_style_contraste_sans_rien.png
+              expected/
+  ```
+
+---
+
+### 5. Matrice de Validation des Tests d'Intégration par Sprint
+
+Cette matrice permet d'isoler immédiatement le sprint responsable en cas de divergence ou de régression :
+
+| Sprint | Entrée | Sortie | Test Pivot & Critère d'Acceptation |
+| :--- | :--- | :--- | :--- |
+| **S1** | JSON `CA01` | `PolygonMask` | Projection GPS ➔ Pixels conforme à l'emprise ($3810 \times 2130$) |
+| **S2** | Image `CA01` | `RoadMask` | Extraction colorimétrique et fermeture sans perte d'axes secondaires |
+| **S3** | `RoadMask` | `CellGraph` | Cellules 4-connexes étanches + `RoadInterfaces` associées |
+| **S4** | `PolygonMask` + `CellGraph` | `CellSelection` | Vote déterministe (21 cellules pleines / 6 partielles) |
+| **S5** | `CellGraph` + `CellSelection` | `FinalMask` | Reconstruction des frontières routières + ronds-points résolus par topologie |
+| **S6** | `FinalMask` + Image source | `PNG RGBA` | Transition alpha sub-pixel, CLI `--v2`, IoU et métriques géométriques |
+
+---
+
+### 6. Architecture V2 Globale
+
+```text
+                         JSON
+                          │
+                          ▼
+                 ┌─────────────────┐
+                 │    SPRINT 1     │
+                 │ WebMercator     │
+                 │ PolygonRasterizer│
+                 └────────┬────────┘
+                          │
+                    PolygonMask P
+                          │
+                          │
+Image ──────────► ┌───────▼────────┐
+                  │    SPRINT 2    │
+                  │ RoadDetector   │
+                  │ RoadMaskCleaner│
+                  └───────┬────────┘
+                          │
+                    RoadMask R
+                          │
+                          ▼
+                  ┌───────────────┐
+                  │    SPRINT 3   │
+                  │ CellLabeler   │
+                  │ CellGraph     │
+                  │ RoadInterface │
+                  └───────┬───────┘
+                          │
+                  CellGraph + P
+                          │
+                          ▼
+                  ┌───────────────┐
+                  │    SPRINT 4   │
+                  │ CellCoverage  │
+                  │ CellClassifier│
+                  └───────┬───────┘
+                          │
+                   CellSelection
+                          │
+                          ▼
+                  ┌───────────────┐
+                  │    SPRINT 5   │
+                  │ BoundaryRoad  │
+                  │ Geodesic      │
+                  │ IslandResolver│
+                  │ TERRITORY/ZONE│
+                  └───────┬───────┘
+                          │
+                       FinalMask
+                          │
+                          ▼
+                  ┌───────────────┐
+                  │    SPRINT 6   │
+                  │ AlphaRenderer │
+                  │ ImageClipper  │
+                  │ V2 CLI        │
+                  └───────┬───────┘
+                          │
+                          ▼
+                     PNG RGBA
+```
