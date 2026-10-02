@@ -65,7 +65,7 @@ public final class WebMercatorProjection {
     private double computeWorldY(double latitude) {
         double sinLat = Math.sin(Math.toRadians(latitude));
         // Borner sinLat pour éviter les singularités aux pôles
-        sinLat = Math.max(-0.9999, Math.min(0.9999, sinLat));
+        sinLat = Math.clamp(sinLat, -0.9999, 0.9999);
         return (0.5 - Math.log((1.0 + sinLat) / (1.0 - sinLat)) / (4.0 * Math.PI)) * worldScale;
     }
 }
