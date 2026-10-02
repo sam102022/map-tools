@@ -139,25 +139,23 @@ public class RoadSnappingEngine {
             return rasterizeAndPreserveCore(primaryMask, simplified, config.antialiasing());
         }
 
-        // Un contour raster simplifié peut relier deux sommets très éloignés par une droite.
-        // Le densifier permet de suivre les courbes routières au lieu de couper les virages.
-        List<Point> samplingContour = densify(simplified, 4.0);
-        List<Point> adjustedContour = roadSnapper.snap(samplingContour, roadCandidates,
-                primaryMask.getWidth(), primaryMask.getHeight(), config, SnapTargetEdge.OUTER, mapImage);
-        adjustedContour = smoothNormalOffsets(samplingContour, adjustedContour, 2);
+        // 1. Solidifier le réseau routier (remplir les ronds-points)
+        BinaryMask solidRoads = MorphologyOps.fillSmallHoles(roadCandidates, 15000);
 
-        boolean moved = false;
-        for (int i = 0; i < samplingContour.size(); i++) {
-            if (!samplingContour.get(i).equals(adjustedContour.get(i))) {
-                moved = true;
-                break;
-            }
-        }
-        if (!moved) {
-            return rasterizeAndPreserveCore(primaryMask, simplified, config.antialiasing());
+        // 2. Expansion Positive du territoire jusqu'au bord extérieur de la route.
+        // On part du masque primaire et on l'étend.
+        BinaryMask expandedMask = MorphologyOps.snapToOuterEdge(primaryMask, solidRoads, config.snapDistance());
+
+        // 3. Récupération du contour de cette nouvelle forme
+        List<Point> snappedContour = contourExtractor.extractLargestContour(expandedMask);
+        if (snappedContour.size() < 3) {
+            return CoverageMask.fromBinaryMask(expandedMask);
         }
 
-        return rasterizeAndPreserveCore(primaryMask, adjustedContour, config.antialiasing());
+        // 4. Lissage vectoriel 
+        List<Point> adjustedContour = contourSimplifier.simplify(snappedContour, 1.5);
+
+        return rasterizeAndPreserveCore(expandedMask, adjustedContour, config.antialiasing());
     }
 
     /**

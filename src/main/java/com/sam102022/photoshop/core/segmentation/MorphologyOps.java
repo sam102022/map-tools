@@ -14,7 +14,165 @@ public final class MorphologyOps {
     }
 
     /**
-     * Applique une opération de dilatation morphologique 2D sur un masque binaire.
+     * Remplit uniquement les petits trous internes d'un masque binaire (ex: l'intÃ©rieur d'un rond-point).
+     * Les trous sont dÃ©finis comme des composantes de fond non connectÃ©es aux bords et dont l'aire est <= maxArea.
+     * @param mask Le masque source
+     * @param maxArea L'aire maximale en pixels pour considÃ©rer qu'un trou doit Ãªtre rempli.
+     */
+    public static BinaryMask fillSmallHoles(BinaryMask mask, int maxArea) {
+        if (mask == null) {
+            throw new IllegalArgumentException("Le masque ne peut pas Ãªtre null.");
+        }
+        int w = mask.getWidth();
+        int h = mask.getHeight();
+        boolean[] visited = new boolean[w * h];
+        BinaryMask result = mask.copy();
+
+        Queue<Integer> queue = new ArrayDeque<>();
+        for (int x = 0; x < w; x++) {
+            if (!mask.get(x, 0)) { queue.offer(x); visited[x] = true; }
+            if (!mask.get(x, h - 1)) { int idx = (h - 1) * w + x; queue.offer(idx); visited[idx] = true; }
+        }
+        for (int y = 0; y < h; y++) {
+            if (!mask.get(0, y)) { queue.offer(y * w); visited[y * w] = true; }
+            if (!mask.get(w - 1, y)) { int idx = y * w + (w - 1); queue.offer(idx); visited[idx] = true; }
+        }
+
+        int[] dx = {1, -1, 0, 0};
+        int[] dy = {0, 0, 1, -1};
+        while (!queue.isEmpty()) {
+            int cur = queue.poll();
+            int cx = cur % w;
+            int cy = cur / w;
+            for (int i = 0; i < 4; i++) {
+                int nx = cx + dx[i];
+                int ny = cy + dy[i];
+                if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
+                    int nIdx = ny * w + nx;
+                    if (!mask.get(nx, ny) && !visited[nIdx]) {
+                        visited[nIdx] = true;
+                        queue.offer(nIdx);
+                    }
+                }
+            }
+        }
+
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                int idx = y * w + x;
+                if (!mask.get(x, y) && !visited[idx]) {
+                    java.util.List<Integer> holePixels = new java.util.ArrayList<>();
+                    Queue<Integer> holeQueue = new ArrayDeque<>();
+
+                    holeQueue.offer(idx);
+                    visited[idx] = true;
+                    holePixels.add(idx);
+
+                    while(!holeQueue.isEmpty()) {
+                        int cur = holeQueue.poll();
+                        int cx = cur % w;
+                        int cy = cur / w;
+                        for (int i = 0; i < 4; i++) {
+                            int nx = cx + dx[i];
+                            int ny = cy + dy[i];
+                            if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
+                                int nIdx = ny * w + nx;
+                                if (!mask.get(nx, ny) && !visited[nIdx]) {
+                                    visited[nIdx] = true;
+                                    holeQueue.offer(nIdx);
+                                    holePixels.add(nIdx);
+                                }
+                            }
+                        }
+                    }
+                    if (holePixels.size() <= maxArea) {
+                        for (int p : holePixels) {
+                            result.set(p % w, p / w, true);
+                        }
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Dilate le territoire de faÃ§on gÃ©odÃ©sique jusqu'au bord extÃ©rieur des routes.
+     * Le territoire s'Ã©tend librement dans les zones vierges jusqu'Ã  maxDistance pour rattraper la route.
+     * S'il rencontre une route, il l'englobe intÃ©gralement mais s'arrÃªte net sur son bord extÃ©rieur.
+     */
+    public static BinaryMask snapToOuterEdge(BinaryMask territory, BinaryMask roads, int maxDistance) {
+        if (territory == null || roads == null) throw new IllegalArgumentException();
+        int w = territory.getWidth();
+        int h = territory.getHeight();
+        BinaryMask result = territory.copy();
+
+        int[] dist = new int[w * h];
+        java.util.Arrays.fill(dist, Integer.MAX_VALUE);
+        boolean[] touched = new boolean[w * h];
+
+        Queue<Integer> queue = new ArrayDeque<>();
+
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                if (territory.get(x, y)) {
+                    boolean isBoundary = false;
+                    if (x > 0 && !territory.get(x-1, y)) isBoundary = true;
+                    else if (x < w-1 && !territory.get(x+1, y)) isBoundary = true;
+                    else if (y > 0 && !territory.get(x, y-1)) isBoundary = true;
+                    else if (y < h-1 && !territory.get(x, y+1)) isBoundary = true;
+
+                    if (isBoundary) {
+                        int idx = y * w + x;
+                        queue.offer(idx);
+                        dist[idx] = 0;
+                        touched[idx] = roads.get(x, y);
+                    }
+                }
+            }
+        }
+
+        int[] dx = {1, -1, 0, 0};
+        int[] dy = {0, 0, 1, -1};
+
+        while (!queue.isEmpty()) {
+            int idx = queue.poll();
+            int cx = idx % w;
+            int cy = idx / w;
+            int cDist = dist[idx];
+            boolean cTouched = touched[idx];
+
+            if (cDist >= maxDistance) continue;
+
+            for (int i = 0; i < 4; i++) {
+                int nx = cx + dx[i];
+                int ny = cy + dy[i];
+
+                if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
+                    int nIdx = ny * w + nx;
+                    if (!result.get(nx, ny)) {
+                        boolean isRoad = roads.get(nx, ny);
+
+                        if (isRoad) {
+                            result.set(nx, ny, true);
+                            dist[nIdx] = cDist + 1;
+                            touched[nIdx] = true;
+                            queue.offer(nIdx);
+                        } else if (!cTouched) {
+                            result.set(nx, ny, true);
+                            dist[nIdx] = cDist + 1;
+                            touched[nIdx] = false;
+                            queue.offer(nIdx);
+                        }
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Applique une opÃ©ration de dilatation morphologique 2D sur un masque binaire.
      * Chaque pixel actif étend son empreinte dans une fenêtre carrée de demi-largeur {@code radius}.
      *
      * @param mask   Masque binaire d'entrée.
