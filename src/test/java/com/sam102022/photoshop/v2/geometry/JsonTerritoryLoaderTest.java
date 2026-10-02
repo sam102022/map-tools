@@ -27,7 +27,10 @@ class JsonTerritoryLoaderTest {
     @Test
     @DisplayName("Chargement complet du fichier d'échantillon réel Territoire CA01")
     void testLoadSampleTerritoryJson() throws IOException {
-        Path jsonPath = Paths.get("maps/captures_maps/Territoire CA01/01_plan_avec_territoires.json");
+        Path jsonPath = Paths.get("src/test/resources/v2/fixtures/CA01/01_plan_avec_territoires.json");
+        if (!java.nio.file.Files.exists(jsonPath)) {
+            jsonPath = Paths.get("maps/captures_maps/Territoire CA01/01_plan_avec_territoires.json");
+        }
         assertTrue(jsonPath.toFile().exists(), "Le fichier de test réel doit être présent");
 
         JsonTerritoryLoader loader = new JsonTerritoryLoader();

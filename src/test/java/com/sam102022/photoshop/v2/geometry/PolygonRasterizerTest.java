@@ -26,10 +26,10 @@ class PolygonRasterizerTest {
         );
 
         PolygonRasterizer rasterizer = new PolygonRasterizer();
-        BinaryMask mask = rasterizer.rasterize(40, 40, List.of(outer), List.of());
+        PolygonMask mask = rasterizer.rasterize(40, 40, List.of(outer), List.of());
 
-        assertEquals(40, mask.getWidth());
-        assertEquals(40, mask.getHeight());
+        assertEquals(40, mask.width());
+        assertEquals(40, mask.height());
 
         // L'intérieur doit être actif
         assertTrue(mask.get(20, 20));
@@ -57,7 +57,7 @@ class PolygonRasterizerTest {
         );
 
         PolygonRasterizer rasterizer = new PolygonRasterizer();
-        BinaryMask mask = rasterizer.rasterize(50, 50, List.of(outer), List.of(hole));
+        PolygonMask mask = rasterizer.rasterize(50, 50, List.of(outer), List.of(hole));
 
         // Entre le contour et le trou : actif
         assertTrue(mask.get(15, 15));
@@ -71,15 +71,15 @@ class PolygonRasterizerTest {
     @DisplayName("Rasterisation avec anneaux extérieurs vides ou nuls retourne un masque vide")
     void testEmptyOuterRingsReturnsEmptyMask() {
         PolygonRasterizer rasterizer = new PolygonRasterizer();
-        BinaryMask maskNull = rasterizer.rasterize(20, 20, null, null);
-        BinaryMask maskEmpty = rasterizer.rasterize(20, 20, List.of(), null);
+        PolygonMask maskNull = rasterizer.rasterize(20, 20, null, null);
+        PolygonMask maskEmpty = rasterizer.rasterize(20, 20, List.of(), null);
 
-        assertEquals(20, maskNull.getWidth());
-        assertEquals(20, maskNull.getHeight());
+        assertEquals(20, maskNull.width());
+        assertEquals(20, maskNull.height());
         assertFalse(maskNull.get(10, 10));
 
-        assertEquals(20, maskEmpty.getWidth());
-        assertEquals(20, maskEmpty.getHeight());
+        assertEquals(20, maskEmpty.width());
+        assertEquals(20, maskEmpty.height());
         assertFalse(maskEmpty.get(10, 10));
     }
 

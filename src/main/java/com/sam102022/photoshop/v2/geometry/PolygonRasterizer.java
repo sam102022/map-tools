@@ -22,23 +22,23 @@ public final class PolygonRasterizer {
     }
 
     /**
-     * Rasterise un polygone pixel en masque binaire.
+     * Rasterise un polygone pixel en masque binaire encapsulé dans le contrat formel PolygonMask (SPRINTS_V2.md).
      *
      * @param width      Largeur de l'image de destination (> 0).
      * @param height     Hauteur de l'image de destination (> 0).
      * @param outerRings Anneaux extérieurs (liste de listes de points pixels).
      * @param innerRings Trous intérieurs (liste de listes de points pixels).
-     * @return Masque binaire où les pixels à l'intérieur du polygone sont à true.
+     * @return Contrat PolygonMask où les pixels à l'intérieur du polygone sont à true.
      * @throws IllegalArgumentException si les dimensions sont inférieures ou égales à zéro.
      */
-    public BinaryMask rasterize(int width, int height,
-                                List<List<PixelPoint>> outerRings,
-                                List<List<PixelPoint>> innerRings) {
+    public PolygonMask rasterize(int width, int height,
+                                 List<List<PixelPoint>> outerRings,
+                                 List<List<PixelPoint>> innerRings) {
         if (width <= 0 || height <= 0) {
             throw new IllegalArgumentException("Dimensions invalides : " + width + "x" + height);
         }
         if (outerRings == null || outerRings.isEmpty()) {
-            return new BinaryMask(width, height);
+            return new PolygonMask(width, height, new BinaryMask(width, height));
         }
 
         Path2D.Double path = new Path2D.Double(Path2D.WIND_EVEN_ODD);
@@ -72,7 +72,7 @@ public final class PolygonRasterizer {
                 }
             }
         }
-        return new BinaryMask(width, height, data);
+        return new PolygonMask(width, height, new BinaryMask(width, height, data));
     }
 
     /**

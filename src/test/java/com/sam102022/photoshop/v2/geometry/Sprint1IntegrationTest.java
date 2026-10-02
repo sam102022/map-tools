@@ -30,7 +30,11 @@ class Sprint1IntegrationTest {
     @Test
     @DisplayName("Génération complète du polygone pixel P sur Territoire CA01 conforme au prototype Python")
     void testEndToEndSprint1Pipeline() throws IOException {
-        Path jsonPath = Paths.get("maps/captures_maps/Territoire CA01/01_plan_avec_territoires.json");
+        Path jsonPath = Paths.get("src/test/resources/v2/fixtures/CA01/01_plan_avec_territoires.json");
+        if (!java.nio.file.Files.exists(jsonPath)) {
+            // Repli sur le dossier local si exécuté depuis un autre répertoire de travail
+            jsonPath = Paths.get("maps/captures_maps/Territoire CA01/01_plan_avec_territoires.json");
+        }
 
         // 1. Chargement JSON
         JsonTerritoryLoader loader = new JsonTerritoryLoader();
@@ -51,9 +55,9 @@ class Sprint1IntegrationTest {
             projectedInnerRings.add(projectedRing);
         }
 
-        // 3. Rasterisation en masque P
+        // 3. Rasterisation en contrat officiel PolygonMask P
         PolygonRasterizer rasterizer = new PolygonRasterizer();
-        BinaryMask polygonMask = rasterizer.rasterize(
+        PolygonMask polygonMask = rasterizer.rasterize(
                 loaded.mapContext().width(),
                 loaded.mapContext().height(),
                 projectedOuterRings,
@@ -61,8 +65,8 @@ class Sprint1IntegrationTest {
         );
 
         // 4. Vérifications quantitatives
-        assertEquals(3810, polygonMask.getWidth());
-        assertEquals(2130, polygonMask.getHeight());
+        assertEquals(3810, polygonMask.width());
+        assertEquals(2130, polygonMask.height());
 
         // L'aire du polygone projeté P dans le prototype Python script.py est de 1 184 004 pixels
         int activePixels = polygonMask.countActivePixels();
