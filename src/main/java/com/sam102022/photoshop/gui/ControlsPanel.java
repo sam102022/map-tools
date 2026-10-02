@@ -23,6 +23,7 @@ public class ControlsPanel extends JPanel {
     private final JSlider roadSensitivitySlider = new JSlider(5, 20, 10);
     private final JSlider smoothSlider = new JSlider(0, 5, 1);
     private final JCheckBox antialiasingCheckbox = new JCheckBox("Anti-aliasing", true);
+    private final JCheckBox roadSmoothingCheckbox = new JCheckBox("Lisser routes", true);
     private final JComboBox<SelectorColor> colorSelector = new JComboBox<>(SelectorColor.values());
 
     private final JButton clipButton = new JButton("Détourer");
@@ -46,6 +47,7 @@ public class ControlsPanel extends JPanel {
         smoothSlider.setMajorTickSpacing(1);
         add(createSliderBox("Lissage Bords (px):", smoothSlider));
         add(antialiasingCheckbox);
+        add(roadSmoothingCheckbox);
 
         JPanel colorBox = new JPanel(new BorderLayout());
         colorBox.add(new JLabel("Couleur Zone :"), BorderLayout.NORTH);
@@ -95,6 +97,7 @@ public class ControlsPanel extends JPanel {
                 .roadSensitivity(sensitivity)
                 .smoothRadius(smooth)
                 .antialiasing(antialiasing)
+                .smoothRoadEdges(roadSmoothingCheckbox.isSelected())
                 .mode(mode)
                 .zoneColor(zoneColor)
                 .build();

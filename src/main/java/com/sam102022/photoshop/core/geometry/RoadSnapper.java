@@ -4,6 +4,7 @@ import com.sam102022.photoshop.core.model.BinaryMask;
 import com.sam102022.photoshop.core.model.SnappingConfig;
 
 import java.awt.Point;
+import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -59,8 +60,29 @@ public class RoadSnapper {
      */
     public List<Point> snap(List<Point> contour, BinaryMask roadCandidates, int imageWidth,
                             int imageHeight, SnappingConfig config, SnapTargetEdge targetEdge) {
+        return snap(contour, roadCandidates, imageWidth, imageHeight, config, targetEdge, null);
+    }
+
+    /**
+     * Recale le contour vers la chaussée, puis affine sa position sur les bords visibles de la carte.
+     *
+     * @param contour Contour polygonal à recaler.
+     * @param roadCandidates Masque des chaussées candidates, idéalement rasterisé depuis les axes OSM.
+     * @param imageWidth Largeur de la carte et du masque.
+     * @param imageHeight Hauteur de la carte et du masque.
+     * @param config Configuration contenant le rayon maximal de recherche.
+     * @param targetEdge Bord de chaussée ciblé.
+     * @param mapImage Carte affichée, utilisée pour mesurer le contraste au bord de la chaussée.
+     * @return Contour recalé sur les bords visibles des chaussées.
+     * @throws IllegalArgumentException si les arguments ou dimensions sont incompatibles.
+     */
+    public List<Point> snap(List<Point> contour, BinaryMask roadCandidates, int imageWidth,
+                            int imageHeight, SnappingConfig config, SnapTargetEdge targetEdge,
+                            BufferedImage mapImage) {
         validateArguments(contour, roadCandidates, imageWidth, imageHeight, config);
-        return snapContour(contour, roadCandidates, imageWidth, imageHeight, config.snapDistance(), targetEdge);
+        validateGuideImage(mapImage, imageWidth, imageHeight);
+        return snapContour(contour, roadCandidates, imageWidth, imageHeight,
+                config.snapDistance(), targetEdge, mapImage);
     }
 
     /**
@@ -77,7 +99,26 @@ public class RoadSnapper {
      */
     public List<Point> snapContour(List<Point> points, BinaryMask candidates, int imageWidth,
                                    int imageHeight, int radius, SnapTargetEdge targetEdge) {
+        return snapContour(points, candidates, imageWidth, imageHeight, radius, targetEdge, null);
+    }
+
+    /**
+     * Recale les points du contour avec un guide visuel optionnel.
+     *
+     * @param points Points ordonnés du contour.
+     * @param candidates Masque des routes candidates.
+     * @param imageWidth Largeur de l'image.
+     * @param imageHeight Hauteur de l'image.
+     * @param radius Rayon maximal de recherche.
+     * @param targetEdge Bord routier recherché.
+     * @param mapImage Carte dont le contraste peut préciser le bord de la chaussée.
+     * @return Copie recalée des points.
+     */
+    private List<Point> snapContour(List<Point> points, BinaryMask candidates, int imageWidth,
+                                    int imageHeight, int radius, SnapTargetEdge targetEdge,
+                                    BufferedImage mapImage) {
         validateContourArguments(points, candidates, imageWidth, imageHeight, targetEdge);
+        validateGuideImage(mapImage, imageWidth, imageHeight);
         if (points.size() < 3) {
             return List.copyOf(points);
         }
@@ -88,7 +129,8 @@ public class RoadSnapper {
         for (int i = 0; i < points.size(); i++) {
             Point current = points.get(i);
             VertexNormal normal = computeVertexNormal(points, i, area);
-            snapped.add(snapPoint(current, normal, candidates, imageWidth, imageHeight, radius, targetEdge));
+            snapped.add(snapPoint(current, normal, candidates, imageWidth, imageHeight,
+                    radius, targetEdge, mapImage));
         }
 
         return List.copyOf(snapped);
@@ -117,6 +159,19 @@ public class RoadSnapper {
         }
         if (candidates.getWidth() != imageWidth || candidates.getHeight() != imageHeight) {
             throw new IllegalArgumentException("Dimensions incompatibles entre contour et masque routier.");
+        }
+    }
+
+    /**
+     * Vérifie que l'image-guide optionnelle correspond au repère du masque.
+     *
+     * @param mapImage Image de carte facultative.
+     * @param width Largeur attendue.
+     * @param height Hauteur attendue.
+     */
+    private static void validateGuideImage(BufferedImage mapImage, int width, int height) {
+        if (mapImage != null && (mapImage.getWidth() != width || mapImage.getHeight() != height)) {
+            throw new IllegalArgumentException("Dimensions incompatibles entre la carte et le masque routier.");
         }
     }
 
@@ -161,7 +216,8 @@ public class RoadSnapper {
      * @return Nouveau point recalé.
      */
     private Point snapPoint(Point current, VertexNormal normal, BinaryMask candidates,
-                            int imageWidth, int imageHeight, int radius, SnapTargetEdge targetEdge) {
+                            int imageWidth, int imageHeight, int radius, SnapTargetEdge targetEdge,
+                            BufferedImage mapImage) {
         if (normal == null) {
             return new Point(current);
         }
@@ -171,28 +227,147 @@ public class RoadSnapper {
             if (targetEdge == SnapTargetEdge.INNER) {
                 return retractFromRoad(current, normal, candidates, imageWidth, imageHeight, radius);
             } else {
-                return advanceToRoadExit(current, normal, candidates, imageWidth, imageHeight, radius);
+                Point edge = advanceToRoadExit(current, normal, candidates, imageWidth, imageHeight, radius);
+                return refineVisibleOuterEdge(edge, normal, candidates, mapImage);
             }
         }
 
-        int[] interval = findRoadBandInterval(candidates, current, normal, imageWidth, imageHeight, radius);
-        int roadStart = interval[0];
-        int roadEnd = interval[1];
+        Point outwardTarget = targetFromRoadBand(current, normal, candidates, imageWidth, imageHeight,
+                radius, targetEdge, 1);
+        Point inwardTarget = targetFromRoadBand(current, normal, candidates, imageWidth, imageHeight,
+                radius, targetEdge, -1);
+        Point target = nearestTarget(current, outwardTarget, inwardTarget);
+        if (target == null) return new Point(current);
+        return targetEdge == SnapTargetEdge.OUTER
+                ? refineVisibleOuterEdge(target, normal, candidates, mapImage)
+                : target;
+    }
 
-        if (roadStart < 0) {
-            return new Point(current);
+    /**
+     * Retourne le bord de chaussée détecté dans le sens indiqué par le vecteur normal.
+     *
+     * @param current Point courant du contour.
+     * @param normal Normale locale du contour.
+     * @param candidates Masque des routes.
+     * @param width Largeur de l'image.
+     * @param height Hauteur de l'image.
+     * @param radius Rayon maximal.
+     * @param targetEdge Bord routier ciblé.
+     * @param direction Sens de balayage (+1 extérieur, -1 intérieur).
+     * @return Point cible, ou null si aucune chaussée n'est trouvée.
+     */
+    private Point targetFromRoadBand(Point current, VertexNormal normal, BinaryMask candidates,
+                                    int width, int height, int radius, SnapTargetEdge targetEdge,
+                                    int direction) {
+        int[] interval = findRoadBandInterval(candidates, current, normal, width, height, radius, direction);
+        if (interval[0] < 0) return null;
+        int step = targetEdge == SnapTargetEdge.OUTER
+                ? (direction > 0 ? interval[1] + 1 : -(interval[0] - 1))
+                : (direction > 0 ? interval[0] - 1 : -(interval[1] + 1));
+        int x = (int) Math.round(current.x + normal.nx() * step);
+        int y = (int) Math.round(current.y + normal.ny() * step);
+        return isOutOfBounds(x, y, width, height) ? null : new Point(x, y);
+    }
+
+    /**
+     * Sélectionne le point de chaussée le plus proche parmi les deux normales.
+     *
+     * @param origin Point initial.
+     * @param first Première cible éventuelle.
+     * @param second Seconde cible éventuelle.
+     * @return La cible la plus proche, ou null si les deux côtés sont vides.
+     */
+    private Point nearestTarget(Point origin, Point first, Point second) {
+        if (first == null) return second;
+        if (second == null) return first;
+        return origin.distanceSq(first) <= origin.distanceSq(second) ? first : second;
+    }
+
+    /**
+     * Ajuste de quelques pixels la limite OSM sur le contraste réellement visible dans la carte.
+     *
+     * @param target Bord approximatif issu du masque OSM.
+     * @param normal Normale extérieure du territoire.
+     * @param candidates Masque routier servant de garde-fou spatial.
+     * @param mapImage Carte source, éventuellement absente.
+     * @return Position du bord visible ou bord OSM initial si le contraste est insuffisant.
+     */
+    private Point refineVisibleOuterEdge(Point target, VertexNormal normal, BinaryMask candidates,
+                                         BufferedImage mapImage) {
+        if (mapImage == null) return target;
+        Point best = target;
+        double bestScore = 5.0;
+        for (int offset = -6; offset <= 6; offset++) {
+            int x = (int) Math.round(target.x + normal.nx() * offset);
+            int y = (int) Math.round(target.y + normal.ny() * offset);
+            if (!isRoadNearby(candidates, x, y, 8)) continue;
+            double contrast = roadnessDifference(mapImage, x, y, normal);
+            double score = contrast - Math.abs(offset) * 0.9;
+            if (score > bestScore) {
+                bestScore = score;
+                best = new Point(x, y);
+            }
         }
+        return best;
+    }
 
-        int targetStep;
-        if (targetEdge == SnapTargetEdge.INNER) {
-            targetStep = Math.max(0, roadStart - 1);
-        } else {
-            targetStep = Math.min(roadEnd + 1, radius);
+    /**
+     * Mesure la différence de caractère routier entre les côtés intérieur et extérieur du bord.
+     *
+     * @param image Carte à analyser.
+     * @param x Abscisse du point de bord candidat.
+     * @param y Ordonnée du point de bord candidat.
+     * @param normal Normale extérieure.
+     * @return Contraste orienté vers l'extérieur.
+     */
+    private double roadnessDifference(BufferedImage image, int x, int y, VertexNormal normal) {
+        double inner = 0;
+        double outer = 0;
+        int samples = 0;
+        for (int offset = 1; offset <= 3; offset++) {
+            int ix = (int) Math.round(x - normal.nx() * offset);
+            int iy = (int) Math.round(y - normal.ny() * offset);
+            int ox = (int) Math.round(x + normal.nx() * offset);
+            int oy = (int) Math.round(y + normal.ny() * offset);
+            if (!isOutOfBounds(ix, iy, image.getWidth(), image.getHeight())
+                    && !isOutOfBounds(ox, oy, image.getWidth(), image.getHeight())) {
+                inner += roadness(image.getRGB(ix, iy));
+                outer += roadness(image.getRGB(ox, oy));
+                samples++;
+            }
         }
+        return samples == 0 ? 0 : (inner - outer) / samples;
+    }
 
-        int targetX = (int) Math.round(current.x + normal.nx() * targetStep);
-        int targetY = (int) Math.round(current.y + normal.ny() * targetStep);
-        return new Point(targetX, targetY);
+    /**
+     * Calcule un score favorisant la dominante bleu-gris des chaussées et ignorant les textes gris.
+     *
+     * @param rgb Couleur source ARGB.
+     * @return Score chromatique et tonal du pixel.
+     */
+    private double roadness(int rgb) {
+        int red = (rgb >> 16) & 0xFF;
+        int green = (rgb >> 8) & 0xFF;
+        int blue = rgb & 0xFF;
+        return Math.max(0, 0.75 * (blue - red) + 0.25 * (green - red));
+    }
+
+    /**
+     * Vérifie que le point raffiné reste dans le voisinage immédiat d'une route OSM.
+     *
+     * @param candidates Masque des routes.
+     * @param x Abscisse du point.
+     * @param y Ordonnée du point.
+     * @param radius Rayon de garde.
+     * @return Vrai si un candidat routier est proche.
+     */
+    private boolean isRoadNearby(BinaryMask candidates, int x, int y, int radius) {
+        for (int dy = -radius; dy <= radius; dy++) {
+            for (int dx = -radius; dx <= radius; dx++) {
+                if (dx * dx + dy * dy <= radius * radius && candidates.get(x + dx, y + dy)) return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -245,14 +420,14 @@ public class RoadSnapper {
      * @return Tableau à 2 éléments [k_start, k_end] ou [-1, -1] si aucune route n'est accrochée.
      */
     private int[] findRoadBandInterval(BinaryMask candidates, Point current, VertexNormal normal,
-                                       int imageWidth, int imageHeight, int radius) {
+                                       int imageWidth, int imageHeight, int radius, int direction) {
         int runStart = -1;
         int runEnd = -1;
         boolean inBand = false;
 
         for (int step = 1; step <= radius; step++) {
-            int x = (int) Math.round(current.x + normal.nx() * step);
-            int y = (int) Math.round(current.y + normal.ny() * step);
+            int x = (int) Math.round(current.x + normal.nx() * step * direction);
+            int y = (int) Math.round(current.y + normal.ny() * step * direction);
             if (isOutOfBounds(x, y, imageWidth, imageHeight)) {
                 break;
             }

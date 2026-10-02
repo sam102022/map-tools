@@ -145,6 +145,38 @@ public final class MorphologyOps {
     }
 
     /**
+     * Lisse légèrement les contours d'un masque par vote local conservateur.
+     * Les pixels de route sont conservés dès qu'ils ont deux voisins actifs, ce qui protège
+     * les bandes étroites et les segments d'un pixel; un pixel extérieur n'est ajouté que si
+     * six des huit voisins sont actifs. Une seule passe arrondit les petites irrégularités.
+     */
+    public static BinaryMask smoothEdges(BinaryMask mask) {
+        if (mask == null) {
+            throw new IllegalArgumentException("Le masque ne peut pas être null.");
+        }
+        int width = mask.getWidth();
+        int height = mask.getHeight();
+        BinaryMask result = new BinaryMask(width, height);
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                int neighbors = 0;
+                for (int dy = -1; dy <= 1; dy++) {
+                    for (int dx = -1; dx <= 1; dx++) {
+                        if ((dx != 0 || dy != 0) && mask.get(x + dx, y + dy)) {
+                            neighbors++;
+                        }
+                    }
+                }
+                boolean active = mask.get(x, y)
+                        ? neighbors >= 2
+                        : neighbors >= 6;
+                result.set(x, y, active);
+            }
+        }
+        return result;
+    }
+
+    /**
      * Applique une opération d'ouverture morphologique 2D (érosion suivie d'une dilatation).
      * Permet d'éliminer le bruit isolé et les fins filaments sans altérer la taille globale de la zone.
      *

@@ -9,12 +9,13 @@ import java.awt.image.BufferedImage;
 /**
  * Façade principale pour la détection et l'unification des axes routiers sur une carte.
  * <p>
- * Ce service orchestre la détection chromatique via {@link RoadCandidateDetector} et applique
- * une fermeture morphologique (selon {@link SnappingConfig#closingRadius()}) afin de connecter
- * les segments de routes interrompus par des libellés textuels ou des passages piétons.
+ * Ce service orchestre la détection chromatique et géométrique via {@link RoadCandidateDetector}.
+ * Une fermeture d'au plus un pixel peut relier les micro-coupures, sans épaissir les bandes routières
+ * par le rayon de fermeture plus large utilisé pour le territoire.
  * </p>
  */
 public class RoadDetector {
+    private static final int MAX_ROAD_GAP_CLOSING_RADIUS = 1;
 
     /**
      * Détecte les axes routiers présents sur l'image de carte et consolide les tracés continus.
@@ -33,8 +34,8 @@ public class RoadDetector {
         }
 
         BinaryMask candidates = new RoadCandidateDetector().detect(mapImage, config.roadSensitivity());
-        return config.closingRadius() == 0
-                ? candidates
-                : MorphologyOps.close(candidates, config.closingRadius());
+        int gapRadius = Math.min(config.closingRadius(), MAX_ROAD_GAP_CLOSING_RADIUS);
+        BinaryMask consolidated = gapRadius == 0 ? candidates : MorphologyOps.close(candidates, gapRadius);
+        return config.smoothRoadEdges() ? MorphologyOps.smoothEdges(consolidated) : consolidated;
     }
 }

@@ -3,6 +3,7 @@ package com.sam102022.photoshop.gui;
 import com.sam102022.photoshop.core.detection.ColorRegionSelectorExtractor;
 import com.sam102022.photoshop.core.detection.DarkDemarcationDetector;
 import com.sam102022.photoshop.core.detection.GreenMaskExtractor;
+import com.sam102022.photoshop.core.detection.OsmRoadMaskLoader;
 import com.sam102022.photoshop.core.detection.RoadDetector;
 import com.sam102022.photoshop.core.model.BinaryMask;
 import com.sam102022.photoshop.core.model.CoverageMask;
@@ -30,6 +31,7 @@ import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.nio.file.Path;
+import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 
@@ -49,6 +51,7 @@ public class MainWindow extends JFrame {
     private record ClippingResult(BufferedImage image, CoverageMask coverageMask, BinaryMask mask) {}
 
     private BufferedImage mapImage;
+    private Path mapImagePath;
     private BufferedImage maskImage;
     private BufferedImage territoryMaskImage;
     private BufferedImage clippedImage;
@@ -115,6 +118,7 @@ public class MainWindow extends JFrame {
     private void loadMapFile(File file) {
         try {
             mapImage = ImageLoader.load(file.toPath());
+            mapImagePath = file.toPath();
             fileSelectionPanel.setMapLabelText(String.format("Carte : %s (%dx%d)", file.getName(), mapImage.getWidth(), mapImage.getHeight()));
             updateOriginalPreview();
         } catch (Exception ex) {
@@ -214,8 +218,9 @@ public class MainWindow extends JFrame {
 
         SwingWorker<ClippingResult, Void> worker = new SwingWorker<>() {
             @Override
-            protected ClippingResult doInBackground() {
+            protected ClippingResult doInBackground() throws Exception {
                 BinaryMask territoryMask = resolveTerritoryMask(maskImage, territoryMaskImage);
+                BinaryMask osmRoadMask = loadAdjacentOsmRoadMask(mapImagePath, mapImage);
 
                 ColorRegionSelectorExtractor colorExtractor = new ColorRegionSelectorExtractor();
                 List<SelectorColor> presentColors = colorExtractor.detectPresentColors(maskImage);
@@ -224,9 +229,9 @@ public class MainWindow extends JFrame {
                 if (shouldExecuteZone(config.mode(), config.zoneColor(), presentColors)) {
                     SelectorColor targetColor = resolveTargetColor(config.zoneColor(), presentColors);
                     computedCoverage = executeZoneSegmentation(mapImage, maskImage, territoryMask,
-                            colorExtractor, targetColor, config);
+                            colorExtractor, targetColor, config, osmRoadMask);
                 } else {
-                    computedCoverage = executeTerritorySnapping(mapImage, territoryMask, config);
+                    computedCoverage = executeTerritorySnapping(mapImage, territoryMask, config, osmRoadMask);
                 }
 
                 BinaryMask computedMask = computedCoverage.toBinaryMask(128);
@@ -256,6 +261,18 @@ public class MainWindow extends JFrame {
         };
 
         worker.execute();
+    }
+
+    private static BinaryMask loadAdjacentOsmRoadMask(Path mapPath, BufferedImage mapImage) throws IOException {
+        Path osmPath = OsmRoadMaskLoader.findAdjacent(mapPath);
+        if (osmPath == null) {
+            System.out.println("Aucun osm_roads.json voisin : détection raster Google Maps conservée.");
+            return null;
+        }
+        System.out.println("Utilisation des routes OSM : " + osmPath.toAbsolutePath());
+        BinaryMask mask = new OsmRoadMaskLoader().load(osmPath, mapImage.getWidth(), mapImage.getHeight());
+        System.out.printf("Masque routier OSM : %d pixels actifs.%n", mask.countActivePixels());
+        return mask;
     }
 
     /**
@@ -357,10 +374,10 @@ public class MainWindow extends JFrame {
      */
     private static CoverageMask executeZoneSegmentation(BufferedImage mapImg, BufferedImage maskImg,
                                                         BinaryMask territoryMask, ColorRegionSelectorExtractor extractor,
-                                                        SelectorColor targetColor, SnappingConfig config) {
+                                                        SelectorColor targetColor, SnappingConfig config,
+                                                        BinaryMask osmRoadMask) {
         BinaryMask interiorMask = extractor.extractInterior(maskImg, targetColor);
-        RoadDetector roadDetector = new RoadDetector();
-        BinaryMask roadCandidates = roadDetector.detectRoads(mapImg, config);
+        BinaryMask roadCandidates = resolveRoadCandidates(mapImg, config, osmRoadMask);
         saveDetectedRoadsMask(roadCandidates);
         DarkDemarcationDetector darkDetector = new DarkDemarcationDetector();
         BinaryMask darkDemarcations = darkDetector.detect(mapImg, maskImg, territoryMask);
@@ -378,12 +395,16 @@ public class MainWindow extends JFrame {
      * @param config        Configuration de recalage.
      * @return Masque de couverture continue résultant.
      */
-    private static CoverageMask executeTerritorySnapping(BufferedImage mapImg, BinaryMask territoryMask, SnappingConfig config) {
-        RoadDetector roadDetector = new RoadDetector();
-        BinaryMask roadCandidates = roadDetector.detectRoads(mapImg, config);
+    private static CoverageMask executeTerritorySnapping(BufferedImage mapImg, BinaryMask territoryMask,
+                                                         SnappingConfig config, BinaryMask osmRoadMask) {
+        BinaryMask roadCandidates = resolveRoadCandidates(mapImg, config, osmRoadMask);
         saveDetectedRoadsMask(roadCandidates);
         RoadSnappingEngine engine = new RoadSnappingEngine();
-        return engine.snapCoverage(territoryMask, roadCandidates, config);
+        return engine.snapCoverage(territoryMask, roadCandidates, mapImg, config);
+    }
+
+    private static BinaryMask resolveRoadCandidates(BufferedImage mapImg, SnappingConfig config, BinaryMask osmRoadMask) {
+        return osmRoadMask != null ? osmRoadMask : new RoadDetector().detectRoads(mapImg, config);
     }
 
     /**

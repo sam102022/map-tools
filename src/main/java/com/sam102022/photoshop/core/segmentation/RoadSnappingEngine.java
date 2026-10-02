@@ -10,6 +10,9 @@ import com.sam102022.photoshop.core.model.CoverageMask;
 import com.sam102022.photoshop.core.model.SnappingConfig;
 
 import java.awt.Point;
+import java.awt.image.BufferedImage;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -73,12 +76,30 @@ public class RoadSnappingEngine {
      * @throws IllegalArgumentException si un des arguments est null ou si les dimensions sont incompatibles.
      */
     public CoverageMask snapCoverage(BinaryMask roughGreenMask, BinaryMask roadCandidates, SnappingConfig config) {
+        return snapCoverage(roughGreenMask, roadCandidates, null, config);
+    }
+
+    /**
+     * Recale le contour en utilisant les routes candidates comme guide et les bords visibles de la carte comme précision finale.
+     *
+     * @param roughGreenMask Masque initial de territoire.
+     * @param roadCandidates Masque des routes OSM ou détectées sur la carte.
+     * @param mapImage Image cartographique source, utilisée pour mesurer les bords de chaussée.
+     * @param config Configuration de recalage et de rendu.
+     * @return Masque de couverture continue final.
+     */
+    public CoverageMask snapCoverage(BinaryMask roughGreenMask, BinaryMask roadCandidates,
+                                     BufferedImage mapImage, SnappingConfig config) {
         if (roughGreenMask == null || roadCandidates == null || config == null) {
             throw new IllegalArgumentException("Les arguments du moteur de recalage ne peuvent pas être null.");
         }
         if (roughGreenMask.getWidth() != roadCandidates.getWidth()
                 || roughGreenMask.getHeight() != roadCandidates.getHeight()) {
             throw new IllegalArgumentException("Dimensions incompatibles entre le masque et les candidats routiers.");
+        }
+        if (mapImage != null && (mapImage.getWidth() != roughGreenMask.getWidth()
+                || mapImage.getHeight() != roughGreenMask.getHeight())) {
+            throw new IllegalArgumentException("La carte et le masque de territoire doivent avoir les mêmes dimensions.");
         }
         if (roughGreenMask.countActivePixels() == 0) {
             return new CoverageMask(roughGreenMask.getWidth(), roughGreenMask.getHeight());
@@ -118,12 +139,16 @@ public class RoadSnappingEngine {
             return rasterizeAndPreserveCore(primaryMask, simplified, config.antialiasing());
         }
 
-        List<Point> adjustedContour = roadSnapper.snap(simplified, roadCandidates,
-                primaryMask.getWidth(), primaryMask.getHeight(), config, SnapTargetEdge.OUTER);
+        // Un contour raster simplifié peut relier deux sommets très éloignés par une droite.
+        // Le densifier permet de suivre les courbes routières au lieu de couper les virages.
+        List<Point> samplingContour = densify(simplified, 4.0);
+        List<Point> adjustedContour = roadSnapper.snap(samplingContour, roadCandidates,
+                primaryMask.getWidth(), primaryMask.getHeight(), config, SnapTargetEdge.OUTER, mapImage);
+        adjustedContour = smoothNormalOffsets(samplingContour, adjustedContour, 2);
 
         boolean moved = false;
-        for (int i = 0; i < simplified.size(); i++) {
-            if (!simplified.get(i).equals(adjustedContour.get(i))) {
+        for (int i = 0; i < samplingContour.size(); i++) {
+            if (!samplingContour.get(i).equals(adjustedContour.get(i))) {
                 moved = true;
                 break;
             }
@@ -133,6 +158,135 @@ public class RoadSnappingEngine {
         }
 
         return rasterizeAndPreserveCore(primaryMask, adjustedContour, config.antialiasing());
+    }
+
+    /**
+     * Élimine les accroches isolées en filtrant médianement les déplacements le long des normales.
+     *
+     * @param originalContour Contour dense avant recalage.
+     * @param snappedContour Contour après accrochage aux routes et aux contrastes de la carte.
+     * @param windowRadius Rayon de la fenêtre médiane, en nombre d'échantillons.
+     * @return Contour recalé sans pointes dues à un pixel ou une intersection isolée.
+     */
+    private List<Point> smoothNormalOffsets(List<Point> originalContour, List<Point> snappedContour,
+                                            int windowRadius) {
+        if (originalContour.size() != snappedContour.size() || originalContour.size() < 3) {
+            return snappedContour;
+        }
+        double area = signedArea(originalContour);
+        if (area == 0) return snappedContour;
+
+        double[] offsets = measureNormalOffsets(originalContour, snappedContour, area);
+        List<Point> smoothed = new ArrayList<>(originalContour.size());
+        for (int i = 0; i < originalContour.size(); i++) {
+            Point current = originalContour.get(i);
+            double[] neighborhood = new double[windowRadius * 2 + 1];
+            for (int delta = -windowRadius; delta <= windowRadius; delta++) {
+                int index = Math.floorMod(i + delta, offsets.length);
+                neighborhood[delta + windowRadius] = offsets[index];
+            }
+            Arrays.sort(neighborhood);
+            double offset = neighborhood[windowRadius];
+            smoothed.add(moveAlongNormal(originalContour, i, area, offset));
+        }
+        return List.copyOf(smoothed);
+    }
+
+    /**
+     * Projette le déplacement observé sur la normale de chaque sommet original.
+     *
+     * @param originalContour Contour non recalé.
+     * @param snappedContour Contour recalé de mêmes dimensions.
+     * @param area Aire signée du contour.
+     * @return Déplacements scalaires en pixels.
+     */
+    private double[] measureNormalOffsets(List<Point> originalContour, List<Point> snappedContour,
+                                          double area) {
+        double[] offsets = new double[originalContour.size()];
+        for (int i = 0; i < offsets.length; i++) {
+            double[] normal = normalAt(originalContour, i, area);
+            Point original = originalContour.get(i);
+            Point snapped = snappedContour.get(i);
+            offsets[i] = (snapped.x - original.x) * normal[0] + (snapped.y - original.y) * normal[1];
+        }
+        return offsets;
+    }
+
+    /**
+     * Repositionne un sommet le long de sa normale orientée vers l'extérieur.
+     *
+     * @param contour Contour servant au calcul des normales.
+     * @param index Indice du sommet.
+     * @param area Aire signée.
+     * @param offset Déplacement signé.
+     * @return Sommet repositionné.
+     */
+    private Point moveAlongNormal(List<Point> contour, int index, double area, double offset) {
+        double[] normal = normalAt(contour, index, area);
+        Point current = contour.get(index);
+        return new Point((int) Math.round(current.x + normal[0] * offset),
+                (int) Math.round(current.y + normal[1] * offset));
+    }
+
+    /**
+     * Calcule la normale extérieure locale d'un contour fermé.
+     *
+     * @param contour Sommets ordonnés.
+     * @param index Indice du sommet.
+     * @param area Aire signée.
+     * @return Normale unitaire sous la forme [nx, ny].
+     */
+    private double[] normalAt(List<Point> contour, int index, double area) {
+        int size = contour.size();
+        Point previous = contour.get(Math.floorMod(index - 1, size));
+        Point next = contour.get((index + 1) % size);
+        double tx = next.x - previous.x;
+        double ty = next.y - previous.y;
+        double length = Math.hypot(tx, ty);
+        if (length == 0) return new double[]{0, 0};
+        double nx = area > 0 ? ty / length : -ty / length;
+        double ny = area > 0 ? -tx / length : tx / length;
+        return new double[]{nx, ny};
+    }
+
+    /**
+     * Calcule l'aire signée d'un contour fermé.
+     *
+     * @param points Sommets du polygone.
+     * @return Aire signée.
+     */
+    private double signedArea(List<Point> points) {
+        double area = 0;
+        for (int i = 0; i < points.size(); i++) {
+            Point current = points.get(i);
+            Point next = points.get((i + 1) % points.size());
+            area += (double) current.x * next.y - (double) next.x * current.y;
+        }
+        return area / 2.0;
+    }
+
+    /**
+     * Ajoute des échantillons régulièrement espacés sur chaque segment d'un contour fermé.
+     *
+     * @param contour Sommets ordonnés du contour.
+     * @param maxSpacing Espacement maximal entre deux échantillons en pixels.
+     * @return Contour densifié sans répétition du premier point à la fin.
+     */
+    private List<Point> densify(List<Point> contour, double maxSpacing) {
+        List<Point> dense = new ArrayList<>();
+        for (int i = 0; i < contour.size(); i++) {
+            Point start = contour.get(i);
+            Point end = contour.get((i + 1) % contour.size());
+            double length = start.distance(end);
+            int segments = Math.max(1, (int) Math.ceil(length / maxSpacing));
+            for (int step = 0; step < segments; step++) {
+                double fraction = (double) step / segments;
+                Point sample = new Point((int) Math.round(start.x + (end.x - start.x) * fraction),
+                        (int) Math.round(start.y + (end.y - start.y) * fraction));
+                if (dense.isEmpty() || !dense.getLast().equals(sample)) dense.add(sample);
+            }
+        }
+        return List.copyOf(dense);
     }
 
     private BinaryMask intersect(BinaryMask first, BinaryMask second) {

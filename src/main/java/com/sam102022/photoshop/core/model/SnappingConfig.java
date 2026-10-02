@@ -19,6 +19,7 @@ public record SnappingConfig(
         int seedErosionRadius,
         int closingRadius,
         boolean antialiasing,
+        boolean smoothRoadEdges,
         OperationMode mode,
         SelectorColor zoneColor
 ) {
@@ -66,7 +67,15 @@ public record SnappingConfig(
     public SnappingConfig(int snapDistance, float roadSensitivity, int smoothRadius,
                           int seedErosionRadius, int closingRadius, boolean antialiasing) {
         this(snapDistance, roadSensitivity, smoothRadius, seedErosionRadius, closingRadius,
-                antialiasing, OperationMode.AUTO, SelectorColor.AUTO);
+                antialiasing, true, OperationMode.AUTO, SelectorColor.AUTO);
+    }
+
+    /** Constructeur de compatibilité pour les configurations avec mode et couleur explicites. */
+    public SnappingConfig(int snapDistance, float roadSensitivity, int smoothRadius,
+                          int seedErosionRadius, int closingRadius, boolean antialiasing,
+                          OperationMode mode, SelectorColor zoneColor) {
+        this(snapDistance, roadSensitivity, smoothRadius, seedErosionRadius, closingRadius,
+                antialiasing, true, mode, zoneColor);
     }
 
     /**
@@ -82,7 +91,7 @@ public record SnappingConfig(
     public SnappingConfig(int snapDistance, float roadSensitivity, int smoothRadius,
                           int seedErosionRadius, int closingRadius) {
         this(snapDistance, roadSensitivity, smoothRadius, seedErosionRadius, closingRadius,
-                true, OperationMode.AUTO, SelectorColor.AUTO);
+                true, true, OperationMode.AUTO, SelectorColor.AUTO);
     }
 
     /**
@@ -92,7 +101,7 @@ public record SnappingConfig(
      * closingRadius=2, antialiasing=true, mode=AUTO, zoneColor=AUTO).
      */
     public static SnappingConfig defaults() {
-        return new SnappingConfig(40, 1.0f, 1, 8, 2, true, OperationMode.AUTO, SelectorColor.AUTO);
+        return new SnappingConfig(40, 1.0f, 1, 8, 2, true, true, OperationMode.AUTO, SelectorColor.AUTO);
     }
 
     /**
@@ -103,7 +112,7 @@ public record SnappingConfig(
      */
     public SnappingConfig withMode(OperationMode mode) {
         return new SnappingConfig(snapDistance, roadSensitivity, smoothRadius, seedErosionRadius,
-                closingRadius, antialiasing, mode, zoneColor);
+                closingRadius, antialiasing, smoothRoadEdges, mode, zoneColor);
     }
 
     /**
@@ -114,7 +123,7 @@ public record SnappingConfig(
      */
     public SnappingConfig withZoneColor(SelectorColor zoneColor) {
         return new SnappingConfig(snapDistance, roadSensitivity, smoothRadius, seedErosionRadius,
-                closingRadius, antialiasing, mode, zoneColor);
+                closingRadius, antialiasing, smoothRoadEdges, mode, zoneColor);
     }
 
     /**
@@ -125,7 +134,12 @@ public record SnappingConfig(
      */
     public SnappingConfig withAntialiasing(boolean antialiasing) {
         return new SnappingConfig(snapDistance, roadSensitivity, smoothRadius, seedErosionRadius,
-                closingRadius, antialiasing, mode, zoneColor);
+                closingRadius, antialiasing, smoothRoadEdges, mode, zoneColor);
+    }
+
+    public SnappingConfig withSmoothRoadEdges(boolean enabled) {
+        return new SnappingConfig(snapDistance, roadSensitivity, smoothRadius, seedErosionRadius,
+                closingRadius, antialiasing, enabled, mode, zoneColor);
     }
 
     /**
@@ -147,6 +161,7 @@ public record SnappingConfig(
         private int seedErosionRadius = 8;
         private int closingRadius = 2;
         private boolean antialiasing = true;
+        private boolean smoothRoadEdges = true;
         private OperationMode mode = OperationMode.AUTO;
         private SelectorColor zoneColor = SelectorColor.AUTO;
 
@@ -216,6 +231,11 @@ public record SnappingConfig(
             return this;
         }
 
+        public Builder smoothRoadEdges(boolean smoothRoadEdges) {
+            this.smoothRoadEdges = smoothRoadEdges;
+            return this;
+        }
+
         /**
          * Définit le mode d'opération (AUTO, TERRITORY ou ZONE).
          *
@@ -246,7 +266,7 @@ public record SnappingConfig(
          */
         public SnappingConfig build() {
             return new SnappingConfig(snapDistance, roadSensitivity, smoothRadius,
-                    seedErosionRadius, closingRadius, antialiasing, mode, zoneColor);
+                    seedErosionRadius, closingRadius, antialiasing, smoothRoadEdges, mode, zoneColor);
         }
     }
 }

@@ -7,9 +7,9 @@ import java.awt.Color;
 import java.awt.image.BufferedImage;
 
 /**
- * Détecte les composantes de masque dans une image de calque.
- * Prend en charge les calques verts (dominance RGB et plage HSV) ainsi que les masques
- * binaires en niveaux de gris (TYPE_BYTE_GRAY) ou noir & blanc.
+ * Détecte un territoire coloré en vert ou lit un masque binaire en niveaux de gris.
+ * Pour un calque vert translucide, nettoie les petits écarts, sélectionne la composante
+ * principale et remplit les détails cartographiques internes.
  */
 public class GreenMaskExtractor {
 
@@ -19,7 +19,7 @@ public class GreenMaskExtractor {
      * ainsi que les masques noir et blanc codés en RVB.
      *
      * @param maskImage Image source du masque ou du calque.
-     * @return Masque binaire nettoyé par ouverture morphologique.
+     * @return Masque binaire du territoire ou du masque fourni.
      * @throws IllegalArgumentException si maskImage est null.
      */
     public BinaryMask extract(BufferedImage maskImage) {
@@ -30,14 +30,83 @@ public class GreenMaskExtractor {
         BinaryMask rawMask;
         if (isNativeGrayscale(maskImage)) {
             rawMask = extractFromNativeGrayscale(maskImage);
-        } else {
-            rawMask = extractGreenMask(maskImage);
-            if (rawMask.countActivePixels() == 0 && isRgbBlackAndWhiteMask(maskImage)) {
-                rawMask = extractFromRgbBlackAndWhite(maskImage);
-            }
+            return MorphologyOps.open(rawMask, 1);
         }
 
+        rawMask = extractGreenMask(maskImage);
+        if (rawMask.countActivePixels() > 0) {
+            // Sur un remplissage vert translucide, noms, routes et pictogrammes
+            // restent visibles et trouent le seuillage couleur. On referme les
+            // petites coupures, conserve le grand territoire, puis remplit ses
+            // trous intérieurs.
+            BinaryMask connected = MorphologyOps.close(rawMask, 1);
+            BinaryMask territory = MorphologyOps.keepLargestComponent(connected);
+            return fillInteriorHoles(territory);
+        }
+
+        if (isRgbBlackAndWhiteMask(maskImage)) {
+            rawMask = extractFromRgbBlackAndWhite(maskImage);
+        }
         return MorphologyOps.open(rawMask, 1);
+    }
+
+    /**
+     * Remplit les composantes de fond qui ne sont pas reliées au bord de l'image.
+     * Le masque d'entrée doit déjà représenter uniquement le territoire visé.
+     *
+     * @param territory Masque binaire de la composante territoriale principale.
+     * @return Masque dont l'intérieur est plein, sans trous dus aux détails cartographiques.
+     */
+    private BinaryMask fillInteriorHoles(BinaryMask territory) {
+        int width = territory.getWidth();
+        int height = territory.getHeight();
+        int size = Math.multiplyExact(width, height);
+        boolean[] exterior = new boolean[size];
+        int[] queue = new int[size];
+        int tail = 0;
+
+        // Amorcer l'inondation de l'extérieur sur les quatre bords de l'image.
+        for (int x = 0; x < width; x++) {
+            tail = enqueueExterior(territory, exterior, queue, tail, x, 0);
+            if (height > 1) tail = enqueueExterior(territory, exterior, queue, tail, x, height - 1);
+        }
+        for (int y = 1; y < height - 1; y++) {
+            tail = enqueueExterior(territory, exterior, queue, tail, 0, y);
+            if (width > 1) tail = enqueueExterior(territory, exterior, queue, tail, width - 1, y);
+        }
+
+        int head = 0;
+        while (head < tail) {
+            int index = queue[head++];
+            int x = index % width;
+            int y = index / width;
+            if (x > 0) tail = enqueueExterior(territory, exterior, queue, tail, x - 1, y);
+            if (x + 1 < width) tail = enqueueExterior(territory, exterior, queue, tail, x + 1, y);
+            if (y > 0) tail = enqueueExterior(territory, exterior, queue, tail, x, y - 1);
+            if (y + 1 < height) tail = enqueueExterior(territory, exterior, queue, tail, x, y + 1);
+        }
+
+        BinaryMask filled = new BinaryMask(width, height);
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                int index = y * width + x;
+                if (territory.get(x, y) || !exterior[index]) {
+                    filled.set(x, y, true);
+                }
+            }
+        }
+        return filled;
+    }
+
+    /** Ajoute un pixel de fond à la file s'il n'a pas encore été visité. */
+    private int enqueueExterior(BinaryMask territory, boolean[] exterior, int[] queue,
+                                int tail, int x, int y) {
+        int index = y * territory.getWidth() + x;
+        if (!territory.get(x, y) && !exterior[index]) {
+            exterior[index] = true;
+            queue[tail++] = index;
+        }
+        return tail;
     }
 
     /**

@@ -3,6 +3,7 @@ package com.sam102022.photoshop.cli;
 import com.sam102022.photoshop.core.detection.ColorRegionSelectorExtractor;
 import com.sam102022.photoshop.core.detection.DarkDemarcationDetector;
 import com.sam102022.photoshop.core.detection.GreenMaskExtractor;
+import com.sam102022.photoshop.core.detection.OsmRoadMaskLoader;
 import com.sam102022.photoshop.core.detection.RoadDetector;
 import com.sam102022.photoshop.core.model.BinaryMask;
 import com.sam102022.photoshop.core.model.CoverageMask;
@@ -75,12 +76,26 @@ public final class CliRunner {
         String outputPathStr = getOptionValue(args, "--output", "clipped_output.png");
         String maskOutputPathStr = getOptionValue(args, "--mask-out", "mask_output.png");
         String territoryMaskPathStr = getOptionValue(args, "--territory-mask", getOptionValue(args, "-tm", null));
+        String osmRoadsPathStr = getOptionValue(args, "--osm-roads", null);
 
         SnappingConfig config = parseSnappingConfig(args);
 
         System.out.println("-> Chargement des images...");
         BufferedImage mapImg = ImageLoader.load(Paths.get(mapPathStr));
         BufferedImage maskImg = ImageLoader.load(Paths.get(maskPathStr));
+
+        Path osmRoadsPath = osmRoadsPathStr == null
+                ? OsmRoadMaskLoader.findAdjacent(Paths.get(mapPathStr))
+                : Paths.get(osmRoadsPathStr);
+        BinaryMask osmRoadMask = null;
+        if (osmRoadsPath != null) {
+            System.out.println("-> Chargement des axes routiers OpenStreetMap : " + osmRoadsPath.toAbsolutePath());
+            osmRoadMask = new OsmRoadMaskLoader().load(osmRoadsPath, mapImg.getWidth(), mapImg.getHeight());
+            System.out.printf("   %d pixels routiers rasterisés depuis OSM (recalage +15 px, +15 px).%n",
+                    osmRoadMask.countActivePixels());
+        } else {
+            System.out.println("-> Aucun osm_roads.json voisin : détection raster Google Maps conservée.");
+        }
 
         ImageLoader.validateDimensions(mapImg, maskImg);
 
@@ -93,9 +108,10 @@ public final class CliRunner {
 
         if (shouldExecuteZoneMode(config.mode(), config.zoneColor(), presentColors)) {
             SelectorColor targetColor = resolveTargetColor(config.zoneColor(), presentColors);
-            finalCoverage = executeZoneWorkflow(mapImg, maskImg, territoryMask, colorExtractor, targetColor, config, outputPathStr);
+            finalCoverage = executeZoneWorkflow(mapImg, maskImg, territoryMask, colorExtractor, targetColor,
+                    config, outputPathStr, osmRoadMask);
         } else {
-            finalCoverage = executeTerritoryWorkflow(mapImg, territoryMask, config, outputPathStr);
+            finalCoverage = executeTerritoryWorkflow(mapImg, territoryMask, config, outputPathStr, osmRoadMask);
         }
 
         if (finalCoverage == null) {
@@ -130,6 +146,7 @@ public final class CliRunner {
                 .roadSensitivity(roadSensitivity)
                 .smoothRadius(smoothRadius)
                 .antialiasing(antialiasing)
+                .smoothRoadEdges(getRoadSmoothingOption(args))
                 .mode(mode)
                 .zoneColor(zoneColor)
                 .build();
@@ -271,14 +288,12 @@ public final class CliRunner {
     private static CoverageMask executeZoneWorkflow(BufferedImage mapImg, BufferedImage maskImg,
                                                     BinaryMask territoryMask, ColorRegionSelectorExtractor extractor,
                                                     SelectorColor targetColor, SnappingConfig config,
-                                                    String outputPathStr) {
+                                                    String outputPathStr, BinaryMask osmRoadMask) {
         System.out.printf("-> Détection du cadre d'annotation de couleur %s...\n", targetColor);
         BinaryMask interiorMask = extractor.extractInterior(maskImg, targetColor);
         System.out.printf("   Intérieur de zone identifié (%d pixels).\n", interiorMask.countActivePixels());
 
-        System.out.println("-> Détection des axes routiers Google Maps...");
-        RoadDetector roadDetector = new RoadDetector();
-        BinaryMask roadCandidates = roadDetector.detectRoads(mapImg, config);
+        BinaryMask roadCandidates = resolveRoadCandidates(mapImg, config, osmRoadMask);
         saveDetectedRoadsMask(roadCandidates, outputPathStr);
         System.out.printf("   %d pixels candidats routiers identifiés.\n", roadCandidates.countActivePixels());
 
@@ -307,24 +322,31 @@ public final class CliRunner {
      */
     private static CoverageMask executeTerritoryWorkflow(BufferedImage mapImg,
                                                          BinaryMask territoryMask, SnappingConfig config,
-                                                         String outputPathStr) {
+                                                         String outputPathStr, BinaryMask osmRoadMask) {
         if (territoryMask.countActivePixels() == 0) {
             System.err.println("Attention : Aucun pixel vert trouvé dans le masque.");
             return null;
         }
 
-        System.out.println("-> Détection des axes routiers Google Maps...");
-        RoadDetector roadDetector = new RoadDetector();
-        BinaryMask roadCandidates = roadDetector.detectRoads(mapImg, config);
+        BinaryMask roadCandidates = resolveRoadCandidates(mapImg, config, osmRoadMask);
         saveDetectedRoadsMask(roadCandidates, outputPathStr);
         System.out.printf("   %d pixels candidats routiers identifiés.\n", roadCandidates.countActivePixels());
 
         System.out.println("-> Recalage géodésique sur les routes...");
         RoadSnappingEngine engine = new RoadSnappingEngine();
-        CoverageMask coverageMask = engine.snapCoverage(territoryMask, roadCandidates, config);
+        CoverageMask coverageMask = engine.snapCoverage(territoryMask, roadCandidates, mapImg, config);
         BinaryMask snappedMask = coverageMask.toBinaryMask(128);
         System.out.printf("   %d pixels conservés après recalage.\n", snappedMask.countActivePixels());
         return coverageMask;
+    }
+
+    private static BinaryMask resolveRoadCandidates(BufferedImage mapImg, SnappingConfig config, BinaryMask osmRoadMask) {
+        if (osmRoadMask != null) {
+            System.out.println("-> Utilisation des axes routiers OpenStreetMap comme barrières de détourage...");
+            return osmRoadMask;
+        }
+        System.out.println("-> Détection raster des axes routiers Google Maps...");
+        return new RoadDetector().detectRoads(mapImg, config);
     }
 
     /**
@@ -403,6 +425,15 @@ public final class CliRunner {
         boolean disabled = hasOption(args, "--no-antialias", "--no-aa");
         if (enabled && disabled) {
             throw new IllegalArgumentException("Conflit d'options : impossible de spécifier simultanément l'activation et la désactivation de l'anti-aliasing.");
+        }
+        return !disabled;
+    }
+
+    private static boolean getRoadSmoothingOption(String[] args) {
+        boolean enabled = hasOption(args, "--smooth-roads");
+        boolean disabled = hasOption(args, "--no-smooth-roads");
+        if (enabled && disabled) {
+            throw new IllegalArgumentException("Conflit d'options : choisissez --smooth-roads ou --no-smooth-roads.");
         }
         return !disabled;
     }
@@ -510,6 +541,7 @@ public final class CliRunner {
         out.println("  --mode <auto|territory|zone>  Mode d'opération (défaut: auto)");
         out.println("  --zone-color, -zc <color>     Couleur de la zone ciblée : red, blue, magenta, cyan (défaut: auto)");
         out.println("  --territory-mask, -tm <path>  Masque optionnel du territoire global");
+        out.println("  --osm-roads <path>            Export osm_roads.json (défaut : recherche à côté de --map)");
         out.println();
         out.println("Options facultatives :");
         out.println("  --output <path>           Fichier PNG détouré final (défaut: clipped_output.png)");
@@ -519,6 +551,8 @@ public final class CliRunner {
         out.println("  --smooth <int>            Rayon de lissage des bords (défaut: 1)");
         out.println("  --antialias, --aa         Activer l'anti-aliasing (défaut)");
         out.println("  --no-antialias, --no-aa   Désactiver l'anti-aliasing");
+        out.println("  --smooth-roads            Lisser légèrement les contours des routes (défaut)");
+        out.println("  --no-smooth-roads         Désactiver le lissage des routes");
         out.println("  --gui                     Lancer l'interface graphique interactive Swing");
         out.println("  --help, -h                Afficher cette aide");
     }
