@@ -1,0 +1,169 @@
+package com.sam102022.photoshop.core.detection;
+
+import com.sam102022.photoshop.core.model.BinaryMask;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import java.awt.Color;
+import java.awt.Graphics2D;
+import java.awt.image.BufferedImage;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class GreenMaskExtractorTest {
+
+    @Test
+    @DisplayName("Extraction d'un rectangle vert pur sur fond blanc")
+    void testExtractPureGreen() {
+        BufferedImage image = new BufferedImage(50, 50, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = image.createGraphics();
+        g.setColor(Color.WHITE);
+        g.fillRect(0, 0, 50, 50);
+
+        // Rectangle vert au centre (10,10 à 39,39)
+        g.setColor(new Color(0, 220, 0));
+        g.fillRect(10, 10, 30, 30);
+        g.dispose();
+
+        GreenMaskExtractor extractor = new GreenMaskExtractor();
+        BinaryMask mask = extractor.extract(image);
+
+        assertTrue(mask.get(20, 20), "Le centre du carré vert doit être actif");
+        assertFalse(mask.get(5, 5), "Le fond blanc ne doit pas être actif");
+        assertTrue(mask.countActivePixels() > 800, "La majeure partie du carré 30x30 doit être détectée");
+    }
+
+    @Test
+    @DisplayName("Extraction avec différentes teintes vertes (kaki, émeraude)")
+    void testExtractVariousGreens() {
+        BufferedImage image = new BufferedImage(30, 30, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = image.createGraphics();
+        g.setColor(Color.BLACK);
+        g.fillRect(0, 0, 30, 30);
+
+        // Vert émeraude
+        g.setColor(new Color(20, 180, 80));
+        g.fillRect(5, 5, 10, 10);
+        g.dispose();
+
+        GreenMaskExtractor extractor = new GreenMaskExtractor();
+        BinaryMask mask = extractor.extract(image);
+
+        assertTrue(mask.get(10, 10), "Le vert émeraude doit être détecté");
+        assertFalse(mask.get(25, 25), "Le fond noir ne doit pas être détecté");
+    }
+
+    @Test
+    @DisplayName("Image sans pixel vert retourne un masque vide")
+    void testExtractNoGreen() {
+        BufferedImage image = new BufferedImage(20, 20, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = image.createGraphics();
+        g.setColor(Color.RED);
+        g.fillRect(0, 0, 20, 20);
+        g.dispose();
+
+        GreenMaskExtractor extractor = new GreenMaskExtractor();
+        BinaryMask mask = extractor.extract(image);
+
+        assertEquals(0, mask.countActivePixels(), "Aucun pixel ne doit être actif sur une image rouge");
+    }
+
+    @Test
+    @DisplayName("Image null lance IllegalArgumentException")
+    void testExtractNullImage() {
+        GreenMaskExtractor extractor = new GreenMaskExtractor();
+        assertThrows(IllegalArgumentException.class, () -> extractor.extract(null));
+    }
+
+    @Test
+    @DisplayName("Extraction d'un vert olive détecté via l'analyse HSV (G - R < 25)")
+    void testExtractHsvGreen() {
+        // R=100, G=115, B=60 : G - R = 15 (< 25), non capté par la règle 1 mais teinte HSV ~76°, S=0.48, V=0.45
+        BufferedImage image = new BufferedImage(30, 30, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = image.createGraphics();
+        g.setColor(Color.BLACK);
+        g.fillRect(0, 0, 30, 30);
+        g.setColor(new Color(100, 115, 60));
+        g.fillRect(5, 5, 20, 20);
+        g.dispose();
+
+        GreenMaskExtractor extractor = new GreenMaskExtractor();
+        BinaryMask mask = extractor.extract(image);
+
+        assertTrue(mask.get(15, 15), "Le vert olive doit être capté par l'analyse HSV");
+        assertTrue(mask.countActivePixels() > 200);
+    }
+
+    @Test
+    @DisplayName("Les pixels transparents ou quasi-transparents (alpha < 30) sont ignorés")
+    void testIgnoreTransparentPixels() {
+        BufferedImage image = new BufferedImage(30, 30, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = image.createGraphics();
+        // Vert mais avec un alpha très faible (15/255)
+        g.setColor(new Color(0, 255, 0, 15));
+        g.fillRect(5, 5, 20, 20);
+        g.dispose();
+
+        GreenMaskExtractor extractor = new GreenMaskExtractor();
+        BinaryMask mask = extractor.extract(image);
+
+        assertEquals(0, mask.countActivePixels(), "Les pixels transparents doivent être ignorés");
+    }
+
+    @Test
+    @DisplayName("Extraction depuis une image nativement en niveaux de gris (TYPE_BYTE_GRAY)")
+    void testExtractNativeGrayscaleImage() {
+        BufferedImage image = new BufferedImage(30, 30, BufferedImage.TYPE_BYTE_GRAY);
+        // Carré blanc (255) sur fond noir (0)
+        for (int y = 5; y <= 20; y++) {
+            for (int x = 5; x <= 20; x++) {
+                image.getRaster().setSample(x, y, 0, 255);
+            }
+        }
+
+        GreenMaskExtractor extractor = new GreenMaskExtractor();
+        BinaryMask mask = extractor.extract(image);
+
+        assertTrue(mask.get(10, 10), "Le centre du carré blanc doit être actif");
+        assertFalse(mask.get(2, 2), "Le fond noir doit être inactif");
+        assertTrue(mask.countActivePixels() > 200);
+    }
+
+    @Test
+    @DisplayName("Extraction depuis une image nativement binaire (TYPE_BYTE_BINARY)")
+    void testExtractNativeBinaryImage() {
+        BufferedImage image = new BufferedImage(30, 30, BufferedImage.TYPE_BYTE_BINARY);
+        Graphics2D g = image.createGraphics();
+        g.setColor(Color.WHITE);
+        g.fillRect(5, 5, 15, 15);
+        g.dispose();
+
+        GreenMaskExtractor extractor = new GreenMaskExtractor();
+        BinaryMask mask = extractor.extract(image);
+
+        assertTrue(mask.get(10, 10));
+        assertFalse(mask.get(2, 2));
+    }
+
+    @Test
+    @DisplayName("Repli sur masque noir et blanc encodé en RVB (blanc sur noir)")
+    void testExtractRgbBlackAndWhiteFallback() {
+        BufferedImage image = new BufferedImage(40, 40, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = image.createGraphics();
+        g.setColor(Color.BLACK);
+        g.fillRect(0, 0, 40, 40);
+        g.setColor(Color.WHITE);
+        g.fillRect(10, 10, 20, 20);
+        g.dispose();
+
+        GreenMaskExtractor extractor = new GreenMaskExtractor();
+        BinaryMask mask = extractor.extract(image);
+
+        assertTrue(mask.get(15, 15), "La zone blanche doit être détectée par repli N&B");
+        assertFalse(mask.get(2, 2), "Le fond noir ne doit pas être actif");
+        assertTrue(mask.countActivePixels() > 300);
+    }
+}
