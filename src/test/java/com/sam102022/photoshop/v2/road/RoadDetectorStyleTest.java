@@ -13,9 +13,15 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+/**
+ * Suite de tests unitaires pour le composant {@link RoadDetectorStyle}.
+ */
 @DisplayName("Tests unitaires du détecteur colorimétrique RoadDetectorStyle")
 class RoadDetectorStyleTest {
 
+    /**
+     * Vérifie la règle colorimétrique sur un pixel type de route bleu-gris.
+     */
     @Test
     @DisplayName("Validation de la règle colorimétrique sur un pixel de route bleu-gris")
     void testDetectRoadColor() {
@@ -33,6 +39,9 @@ class RoadDetectorStyleTest {
         assertFalse(mask.get(0, 0), "Le fond noir ne doit pas être détecté comme route");
     }
 
+    /**
+     * Vérifie le rejet des teintes non routières : vert, blanc, eau saturée, rouge excessif.
+     */
     @Test
     @DisplayName("Rejet des teintes non routières : vert, blanc, eau saturée, rouge excessif")
     void testRejectNonRoadColors() {
@@ -55,6 +64,9 @@ class RoadDetectorStyleTest {
         assertFalse(mask.get(3, 0), "Rouge excessif rejeté");
     }
 
+    /**
+     * Vérifie le rejet d'une image null avec IllegalArgumentException.
+     */
     @Test
     @DisplayName("Rejet d'une image null")
     void testNullImage() {

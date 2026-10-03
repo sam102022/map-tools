@@ -79,7 +79,7 @@ SPRINT 7 (Rendu Sub-Pixel Supersampling SS=4 & CLI V2)
   * `RoadDetectorStyle` : extraction colorimétrique robuste des axes routiers (règles delta RVB bleu-gris issues de `script.py` : `(b-r) >= 12`, `2 <= (b-g) <= 22`, `r < 228`).
   * `RoadDetectorOsm` : rasterisation des segments vectoriels OSM avec largeur théorique.
   * `RoadMaskCleaner` : nettoyage minimal du masque routier afin de supprimer uniquement les artefacts ponctuels identifiés (nettoyage très conservateur pour ne supprimer aucune petite route réelle), puis fermeture topologique minimale (rayon 1 px) pour colmater les discontinuités dues à l'anti-aliasing (`Rclosed`).
-* **Critère de validation :** Comparaison pixel par pixel du `RoadMask` généré avec l'image témoin `maps/road.png` générée par le prototype Python et vérification de la préservation intégrale des axes secondaires. *(Spécification validée)*.
+* **Critère de validation :** Comparaison pixel par pixel du `RoadMask` généré avec l'image témoin `maps/road.png` générée par le prototype Python et vérification de la préservation intégrale des axes secondaires. *(Sprint terminé et validé)*.
 
 ---
 

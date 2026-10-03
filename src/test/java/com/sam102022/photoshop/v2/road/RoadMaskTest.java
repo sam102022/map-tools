@@ -9,9 +9,15 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+/**
+ * Suite de tests unitaires validant le contrat immuable RoadMask (Sprint 2).
+ */
 @DisplayName("Validation du contrat officiel RoadMask (Sprint 2)")
 class RoadMaskTest {
 
+    /**
+     * Vérifie l'instanciation valide d'un RoadMask conforme.
+     */
     @Test
     @DisplayName("Instanciation valide d'un RoadMask conforme")
     void testValidRoadMask() {
@@ -30,6 +36,9 @@ class RoadMaskTest {
         assertTrue(roadMask.closed().get(10, 10));
     }
 
+    /**
+     * Vérifie le rejet des dimensions négatives ou nulles avec IllegalArgumentException.
+     */
     @Test
     @DisplayName("Rejet des dimensions négatives ou nulles")
     void testInvalidDimensions() {
@@ -38,6 +47,9 @@ class RoadMaskTest {
         assertThrows(IllegalArgumentException.class, () -> new RoadMask(10, -1, mask, mask));
     }
 
+    /**
+     * Vérifie le rejet des masques null avec IllegalArgumentException.
+     */
     @Test
     @DisplayName("Rejet des masques null")
     void testNullMasks() {
@@ -46,6 +58,9 @@ class RoadMaskTest {
         assertThrows(IllegalArgumentException.class, () -> new RoadMask(10, 10, mask, null));
     }
 
+    /**
+     * Vérifie le rejet des masques de dimensions incohérentes avec IllegalArgumentException.
+     */
     @Test
     @DisplayName("Rejet des masques de dimensions incohérentes")
     void testInconsistentDimensions() {

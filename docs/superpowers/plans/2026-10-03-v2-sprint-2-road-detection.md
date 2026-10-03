@@ -16,7 +16,7 @@
 - Create: `src/main/java/com/sam102022/photoshop/v2/road/RoadMask.java`
 - Test: `src/test/java/com/sam102022/photoshop/v2/road/RoadMaskTest.java`
 
-- [ ] **Step 1: Écrire les tests unitaires pour le record `RoadMask`**
+- [x] **Step 1: Écrire les tests unitaires pour le record `RoadMask`**
 
 Créer `src/test/java/com/sam102022/photoshop/v2/road/RoadMaskTest.java` :
 ```java
@@ -80,12 +80,12 @@ class RoadMaskTest {
 }
 ```
 
-- [ ] **Step 2: Exécuter le test pour vérifier l'échec de compilation**
+- [x] **Step 2: Exécuter le test pour vérifier l'échec de compilation**
 
 Run: `mvn test -Dtest=RoadMaskTest`
 Expected: FAIL (Cannot find symbol RoadMask)
 
-- [ ] **Step 3: Implémenter le record `RoadMask`**
+- [x] **Step 3: Implémenter le record `RoadMask`**
 
 Créer `src/main/java/com/sam102022/photoshop/v2/road/RoadMask.java` :
 ```java
@@ -130,12 +130,12 @@ public record RoadMask(
 }
 ```
 
-- [ ] **Step 4: Exécuter le test unitaire pour valider le passage**
+- [x] **Step 4: Exécuter le test unitaire pour valider le passage**
 
 Run: `mvn test -Dtest=RoadMaskTest`
 Expected: PASS
 
-- [ ] **Step 5: Commiter**
+- [x] **Step 5: Commiter**
 
 ```bash
 git add src/main/java/com/sam102022/photoshop/v2/road/RoadMask.java src/test/java/com/sam102022/photoshop/v2/road/RoadMaskTest.java
@@ -151,7 +151,7 @@ git commit -m "feat(v2): contrat officiel RoadMask immuable pour le Sprint 2"
 - Create: `src/main/java/com/sam102022/photoshop/v2/road/RoadDetectorStyle.java`
 - Test: `src/test/java/com/sam102022/photoshop/v2/road/RoadDetectorStyleTest.java`
 
-- [ ] **Step 1: Écrire les tests unitaires pour `RoadDetectorStyle`**
+- [x] **Step 1: Écrire les tests unitaires pour `RoadDetectorStyle`**
 
 Créer `src/test/java/com/sam102022/photoshop/v2/road/RoadDetectorStyleTest.java` :
 ```java
@@ -221,12 +221,12 @@ class RoadDetectorStyleTest {
 }
 ```
 
-- [ ] **Step 2: Exécuter le test pour vérifier l'échec de compilation**
+- [x] **Step 2: Exécuter le test pour vérifier l'échec de compilation**
 
 Run: `mvn test -Dtest=RoadDetectorStyleTest`
 Expected: FAIL (Cannot find symbol RoadDetectorStyle)
 
-- [ ] **Step 3: Implémenter `RoadDetector` et `RoadDetectorStyle`**
+- [x] **Step 3: Implémenter `RoadDetector` et `RoadDetectorStyle`**
 
 Créer `src/main/java/com/sam102022/photoshop/v2/road/RoadDetector.java` :
 ```java
@@ -323,12 +323,12 @@ public final class RoadDetectorStyle implements RoadDetector {
 }
 ```
 
-- [ ] **Step 4: Exécuter les tests unitaires pour valider `RoadDetectorStyle`**
+- [x] **Step 4: Exécuter les tests unitaires pour valider `RoadDetectorStyle`**
 
 Run: `mvn test -Dtest=RoadDetectorStyleTest`
 Expected: PASS
 
-- [ ] **Step 5: Commiter**
+- [x] **Step 5: Commiter**
 
 ```bash
 git add src/main/java/com/sam102022/photoshop/v2/road/RoadDetector.java src/main/java/com/sam102022/photoshop/v2/road/RoadDetectorStyle.java src/test/java/com/sam102022/photoshop/v2/road/RoadDetectorStyleTest.java
@@ -343,7 +343,7 @@ git commit -m "feat(v2): detecteur colorimetrique RoadDetectorStyle base sur les
 - Create: `src/main/java/com/sam102022/photoshop/v2/road/RoadMaskCleaner.java`
 - Test: `src/test/java/com/sam102022/photoshop/v2/road/RoadMaskCleanerTest.java`
 
-- [ ] **Step 1: Écrire les tests unitaires pour `RoadMaskCleaner`**
+- [x] **Step 1: Écrire les tests unitaires pour `RoadMaskCleaner`**
 
 Créer `src/test/java/com/sam102022/photoshop/v2/road/RoadMaskCleanerTest.java` :
 ```java
@@ -410,12 +410,12 @@ class RoadMaskCleanerTest {
 }
 ```
 
-- [ ] **Step 2: Exécuter le test pour vérifier l'échec de compilation**
+- [x] **Step 2: Exécuter le test pour vérifier l'échec de compilation**
 
 Run: `mvn test -Dtest=RoadMaskCleanerTest`
 Expected: FAIL (Cannot find symbol RoadMaskCleaner)
 
-- [ ] **Step 3: Implémenter `RoadMaskCleaner`**
+- [x] **Step 3: Implémenter `RoadMaskCleaner`**
 
 Créer `src/main/java/com/sam102022/photoshop/v2/road/RoadMaskCleaner.java` :
 ```java
@@ -559,12 +559,12 @@ public final class RoadMaskCleaner {
 }
 ```
 
-- [ ] **Step 4: Exécuter les tests unitaires pour valider `RoadMaskCleaner`**
+- [x] **Step 4: Exécuter les tests unitaires pour valider `RoadMaskCleaner`**
 
 Run: `mvn test -Dtest=RoadMaskCleanerTest`
 Expected: PASS
 
-- [ ] **Step 5: Commiter**
+- [x] **Step 5: Commiter**
 
 ```bash
 git add src/main/java/com/sam102022/photoshop/v2/road/RoadMaskCleaner.java src/test/java/com/sam102022/photoshop/v2/road/RoadMaskCleanerTest.java
@@ -579,7 +579,7 @@ git commit -m "feat(v2): RoadMaskCleaner avec fermeture minimale 1px et ouvertur
 - Create: `src/main/java/com/sam102022/photoshop/v2/road/RoadDetectorOsm.java`
 - Test: `src/test/java/com/sam102022/photoshop/v2/road/RoadDetectorOsmTest.java`
 
-- [ ] **Step 1: Écrire les tests unitaires pour `RoadDetectorOsm`**
+- [x] **Step 1: Écrire les tests unitaires pour `RoadDetectorOsm`**
 
 Créer `src/test/java/com/sam102022/photoshop/v2/road/RoadDetectorOsmTest.java` :
 ```java
@@ -652,12 +652,12 @@ class RoadDetectorOsmTest {
 }
 ```
 
-- [ ] **Step 2: Exécuter le test pour vérifier l'échec de compilation**
+- [x] **Step 2: Exécuter le test pour vérifier l'échec de compilation**
 
 Run: `mvn test -Dtest=RoadDetectorOsmTest`
 Expected: FAIL (Cannot find symbol RoadDetectorOsm)
 
-- [ ] **Step 3: Implémenter `RoadDetectorOsm`**
+- [x] **Step 3: Implémenter `RoadDetectorOsm`**
 
 Créer `src/main/java/com/sam102022/photoshop/v2/road/RoadDetectorOsm.java` :
 ```java
@@ -941,12 +941,12 @@ public final class RoadDetectorOsm {
 }
 ```
 
-- [ ] **Step 4: Exécuter les tests unitaires pour valider `RoadDetectorOsm`**
+- [x] **Step 4: Exécuter les tests unitaires pour valider `RoadDetectorOsm`**
 
 Run: `mvn test -Dtest=RoadDetectorOsmTest`
 Expected: PASS
 
-- [ ] **Step 5: Commiter**
+- [x] **Step 5: Commiter**
 
 ```bash
 git add src/main/java/com/sam102022/photoshop/v2/road/RoadDetectorOsm.java src/test/java/com/sam102022/photoshop/v2/road/RoadDetectorOsmTest.java
@@ -960,7 +960,7 @@ git commit -m "feat(v2): rasteriseur vectoriel RoadDetectorOsm base sur WebMerca
 **Files:**
 - Create: `src/test/java/com/sam102022/photoshop/v2/road/Sprint2IntegrationTest.java`
 
-- [ ] **Step 1: Écrire le test d'intégration comparant la sortie avec `maps/road.png`**
+- [x] **Step 1: Écrire le test d'intégration comparant la sortie avec `maps/road.png`**
 
 Créer `src/test/java/com/sam102022/photoshop/v2/road/Sprint2IntegrationTest.java` :
 ```java
@@ -1034,12 +1034,12 @@ class Sprint2IntegrationTest {
 }
 ```
 
-- [ ] **Step 2: Exécuter le test d'intégration**
+- [x] **Step 2: Exécuter le test d'intégration**
 
 Run: `mvn test -Dtest=Sprint2IntegrationTest`
 Expected: PASS avec concordance >= 99.5%
 
-- [ ] **Step 3: Commiter**
+- [x] **Step 3: Commiter**
 
 ```bash
 git add src/test/java/com/sam102022/photoshop/v2/road/Sprint2IntegrationTest.java
@@ -1053,13 +1053,13 @@ git commit -m "test(v2): validation d'integration du pipeline Sprint 2 compare a
 **Files:**
 - Create: `JOURNAL.md` (conforme ADR-010)
 
-- [ ] **Step 1: Créer le fichier `JOURNAL.md` consignant les réalisations du Sprint 2**
-- [ ] **Step 2: Exécuter tous les tests V2 pour garantir l'absence de régression**
+- [x] **Step 1: Créer le fichier `JOURNAL.md` consignant les réalisations du Sprint 2**
+- [x] **Step 2: Exécuter tous les tests V2 pour garantir l'absence de régression**
 
 Run: `mvn test -Dtest=com.sam102022.photoshop.v2.**.*Test`
 Expected: ALL PASS (100% de succès sur la suite V2)
 
-- [ ] **Step 3: Commiter**
+- [x] **Step 3: Commiter**
 
 ```bash
 git add JOURNAL.md

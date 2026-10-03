@@ -16,9 +16,17 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+/**
+ * Suite de tests unitaires pour le composant {@link RoadDetectorOsm}.
+ */
 @DisplayName("Validation du détecteur vectoriel RoadDetectorOsm")
 class RoadDetectorOsmTest {
 
+    /**
+     * Vérifie la rasterisation d'un tronçon OSM simple sur un contexte cartographique.
+     *
+     * @throws IOException en cas d'erreur lors de l'écriture ou de la lecture du fichier temporaire.
+     */
     @Test
     @DisplayName("Rasterisation d'un tronçon OSM simple sur un contexte de carte")
     void testRasterizeOsmRoad() throws IOException {
@@ -56,6 +64,9 @@ class RoadDetectorOsmTest {
         Files.deleteIfExists(tempFile);
     }
 
+    /**
+     * Vérifie le rejet des paramètres invalides ou manquants avec les exceptions appropriées.
+     */
     @Test
     @DisplayName("Rejet des paramètres invalides ou manquants")
     void testInvalidParameters() {
@@ -67,6 +78,11 @@ class RoadDetectorOsmTest {
         assertThrows(IOException.class, () -> detector.detect(Path.of("nonexistent_file_xyz.json"), context));
     }
 
+    /**
+     * Vérifie le filtrage des voies non autorisées ou des dessertes mineures (ex: footway, driveway).
+     *
+     * @throws IOException en cas d'erreur de manipulation du fichier temporaire.
+     */
     @Test
     @DisplayName("Filtrage des voies non autorisées ou des dessertes mineures")
     void testIgnoreMinorServiceAndExcludedHighways() throws IOException {
@@ -110,6 +126,11 @@ class RoadDetectorOsmTest {
         Files.deleteIfExists(tempFile);
     }
 
+    /**
+     * Vérifie la prise en compte d'une largeur explicite en mètres renseignée dans les tags OSM.
+     *
+     * @throws IOException en cas d'erreur de manipulation du fichier temporaire.
+     */
     @Test
     @DisplayName("Prise en compte d'une largeur explicite en mètres")
     void testExplicitWidthRoad() throws IOException {
