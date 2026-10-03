@@ -1,6 +1,6 @@
 # Planification des Sprints V2 — Découpage par Cellules Topologiques
 
-Ce document définit le découpage opérationnel en 6 sprints incrémentaux pour l'implémentation de la V2 de l'algorithme de détourage cartographique, conformément à l'[ADR-007](adr/ADR-007-developpement-par-sprints.md) et à la spécification technique [SPEC_V2_ALGORITHME.md](SPEC_V2_ALGORITHME.md).
+Ce document définit le découpage opérationnel en 7 sprints incrémentaux pour l'implémentation de la V2 de l'algorithme de détourage cartographique, conformément à l'[ADR-007](adr/ADR-007-developpement-par-sprints.md), à la spécification technique [SPEC_V2_ALGORITHME.md](SPEC_V2_ALGORITHME.md) et aux avancées de la référence Python V5 (`maps/python/snap_cells_prototype_v5.py`).
 
 ---
 
@@ -30,14 +30,29 @@ SPRINT 4 (Vote Topologique)
 SPRINT 5 (Reconstruction des Frontières Routières & Expansion Géodésique)
         │
         ├── BoundaryRoadExtractor
-        ├── RoadDistanceTransform
-        ├── GeodesicRoadExpander
-        └── TopologicalIslandResolver
+        ├── RoadDistanceTransform (hw)
+        ├── GeodesicRoadExpander (MCP / Dijkstra borné)
+        └── ResidualHoleResolver
         │
         ▼
-     FinalMask
+ ConsolidatedMask Mc (binaire 0/1)
         │
-SPRINT 6 (Rendu Sub-Pixel & CLI V2)
+SPRINT 6 (Géométrie Sub-Pixel, Lissage Robuste LQR & Ronds-points)
+        │
+        ├── SubpixelContourExtractor (Marching Squares 0.5 + Resampling 1px)
+        ├── CornerDetector (Angles vifs > 38° + Smoothstep blend)
+        ├── RobustLqrSmoother (Régression quadratique locale + M-estimateur Cauchy)
+        ├── RoundaboutDetector (Ellipses îlots + sondage radial bord externe)
+        └── HermiteSplineConnector (Raccordement C1 sans rupture de courbure)
+        │
+        ▼
+ SmoothVectorContour
+        │
+SPRINT 7 (Rendu Sub-Pixel Supersampling SS=4 & CLI V2)
+        │
+        ├── SupersampleRenderer (Rastérisation vectorielle 4x + box filter -> CoverageMask)
+        ├── ImageClipper (Assemblage RGBA 32-bit clipped, mask, overlay)
+        └── V2CliRunner (CLI --v2 avec hyperparamètres documentés)
         │
         ▼
  RGBA + diagnostics + CLI
@@ -53,7 +68,7 @@ SPRINT 6 (Rendu Sub-Pixel & CLI V2)
   * `WebMercatorProjection` : formules mathématiques de projection EPSG:3857 vers les coordonnées pixels locales de l'image.
   * `JsonTerritoryLoader` : parseur Jackson/JSON des métadonnées cartographiques et polygones.
   * `PolygonRasterizer` : rasterisation sub-pixel / binaire du polygone projeté (`P[x, y] ∈ {0, 1}`) avec support des trous et multipolygones.
-* **Critère de validation :** Tests unitaires validant la conversion GPS ➔ Pixel avec les coordonnées de `01_plan_avec_territoires.json`, et conformité du masque `P` avec l'emprise réelle.
+* **Critère de validation :** Tests unitaires validant la conversion GPS ➔ Pixel avec les coordonnées de `01_plan_avec_territoires.json`, et conformité du masque `P` avec l'emprise réelle. *(Sprint terminé et validé)*.
 
 ---
 
@@ -64,7 +79,7 @@ SPRINT 6 (Rendu Sub-Pixel & CLI V2)
   * `RoadDetectorStyle` : extraction colorimétrique robuste des axes routiers (règles delta RVB bleu-gris issues de `script.py` : `(b-r) >= 12`, `2 <= (b-g) <= 22`, `r < 228`).
   * `RoadDetectorOsm` : rasterisation des segments vectoriels OSM avec largeur théorique.
   * `RoadMaskCleaner` : nettoyage minimal du masque routier afin de supprimer uniquement les artefacts ponctuels identifiés (nettoyage très conservateur pour ne supprimer aucune petite route réelle), puis fermeture topologique minimale (rayon 1 px) pour colmater les discontinuités dues à l'anti-aliasing (`Rclosed`).
-* **Critère de validation :** Comparaison pixel par pixel du `RoadMask` généré avec l'image témoin `maps/road.png` générée par le prototype Python et vérification de la préservation intégrale des axes secondaires.
+* **Critère de validation :** Comparaison pixel par pixel du `RoadMask` généré avec l'image témoin `maps/road.png` générée par le prototype Python et vérification de la préservation intégrale des axes secondaires. *(Spécification validée)*.
 
 ---
 
@@ -95,40 +110,65 @@ SPRINT 6 (Rendu Sub-Pixel & CLI V2)
 
 ---
 
-## 🌊 Sprint 5 : Reconstruction des Frontières Routières & Expansion Géodésique
-* **Objectif :** Passer de `CellSelection` + `CellGraph` + `BoundaryRoads` à `FinalMask`, en intégrant les routes frontières jusqu'à leur bordure extérieure réelle et en résolvant topologiquement les îlots et ronds-points.
+## 🌊 Sprint 5 : Reconstruction des Frontières Routières & Expansion Géodésique Matricielle
+* **Objectif :** Passer de `CellSelection` + `CellGraph` + `BoundaryRoads` à un masque binaire consolidé `ConsolidatedMask`, en intégrant les routes frontières jusqu'à leur bordure extérieure réelle via une transformée de distance et une propagation géodésique bornée, puis comblement des îlots compacts résiduels.
 * **Principe d'enchaînement :**
-  $$\text{RoadMask} \longrightarrow \text{RoadInterface} \longrightarrow \text{BoundaryRoad} \longrightarrow \text{Distance Transform (hw)} \longrightarrow \text{Geodesic Expansion} \longrightarrow \text{Final Boundary}$$
+  $$\text{RoadMask} \longrightarrow \text{RoadInterface} \longrightarrow \text{BoundaryRoad} \longrightarrow \text{Distance Transform (hw)} \longrightarrow \text{Geodesic Expansion} \longrightarrow \text{ConsolidatedMask}$$
 * **Package cible :** `com.sam102022.photoshop.v2.expansion`
 * **Livrables :**
+  * `BoundingBoxCropper` : recadrage du calcul sur la boîte englobante du polygone d'intention augmentée d'une marge de sécurité ($mg = 90\text{ px}$) pour optimiser les performances de calcul sur les grandes images ($3810 \times 2130$).
   * `BoundaryRoadExtractor` : extraction et classification des interfaces routières reliant une cellule `INSIDE` à une cellule `OUTSIDE` (ou séparant deux zones contiguës en mode `ZONE`).
-  * `RoadDistanceTransform` : calcul de la carte de demi-largeur locale $hw(x, y)$ sur la chaussée par transformée de distance euclidienne.
-  * `GeodesicRoadExpander` (MCP / Dijkstra) : propagation contrainte à la surface routière depuis le bord des cellules retenues avec coût géométrique borné par $d_G \le 2 \times hw + \varepsilon$ (utilisé comme **borne de propagation** et non comme définition directe ou géométrique de la frontière finale).
-  * `TopologicalIslandResolver` : résolution et absorption topologique des îlots intérieurs et ronds-points basée sur la structure du `CellGraph` (ex. une cellule ou îlot résiduel entièrement ceinturé par des `BoundaryRoads` est déterministement absorbé ; la taille pouvant servir de critère secondaire de sécurité, mais jamais d'heuristique de seuil fixe comme $\le 15\,000\text{ px}$).
+  * `RoadDistanceTransform` : calcul de la carte de demi-largeur locale $hw(x, y)$ sur la chaussée par transformée de distance euclidienne (EDT) et filtrage du maximum local ($size = 41$).
+  * `GeodesicRoadExpander` (MCP / Dijkstra) : propagation contrainte à la surface routière depuis le bord des cellules retenues avec coût géométrique borné par $d_G \le 2 \times hw_{\max} + \varepsilon$ (avec $\varepsilon = 4\text{ px}$).
+  * `MorphologicalConsolidator` : union $U = T \cup ext$, ouverture morphologique par élément structurant circulaire (disque de rayon $\rho = 5\text{ px}$) pour régulariser les indentations de la propagation.
+  * `ResidualHoleResolver` : détection et comblement des îlots compacts résiduels fermés ($\text{surface} \le 15\,000\text{ px}$).
 * **Critère de validation :**
   * Intégration rigoureuse des `BoundaryRoads` jusqu'au bord extérieur de la chaussée ;
   * Les routes séparant deux zones internes respectent la règle de partage médian en mode `ZONE` ;
-  * Résolution topologique des ronds-points et îlots sans heuristique de taille magique ;
-  * Absence totale de fuite vers les cellules ou routes extérieures (`OUTSIDE`).
+  * Comblement des trous intérieurs et absence totale de fuite vers les cellules ou routes extérieures (`OUTSIDE`) ;
+  * Génération d'un masque binaire étanche `ConsolidatedMask`.
 
 ---
 
-## 🎨 Sprint 6 : Rendu Sub-Pixel (Anti-Aliasing), Export RGBA & Intégration CLI
-* **Objectif :** Produire les livrables graphiques finaux anti-aliasés et rendre le pipeline V2 accessible en ligne de commande avec des critères de validation mesurables.
+## 📐 Sprint 6 : Géométrie Sub-Pixel, Lissage Robuste LQR & Modélisation des Ronds-points
+* **Objectif :** Transformer le masque binaire consolidé (`ConsolidatedMask`) en un contour vectoriel continu lissé de haute fidélité (`SmoothVectorContour`), en conservant les angles vifs réels, en éliminant les encoches d'intersections sans raboter les virages grâce à la régression quadratique locale robuste, et en substituant les ronds-points par des arcs d'ellipses parfaits raccordés par des splines cubiques d'Hermite.
+* **Package cible :** `com.sam102022.photoshop.v2.contour`
+* **Livrables :**
+  * `SubpixelContourExtractor` : extraction de contour sub-pixel continu par Marching Squares à isovaleur 0.5 (`find_contours`) sur le masque binaire avec trous comblés (`Mfill`), extraction de l'anneau extérieur principal et rééchantillonnage curviligne équidistant ($\text{step} = 1.0\text{ px}$).
+  * `CornerDetector` : détection des angles vifs et virages en épingle par déviation tangentielle sur fenêtre large ($L = 80\text{ px}$, seuil $\theta \ge 38^\circ$), figeant les sommets de coins et appliquant un fondu progressif (*Hermite Smoothstep* $3\alpha^2 - 2\alpha^3$ entre $R_0 = 35$ et $R_1 = 95\text{ px}$).
+  * `RobustLqrSmoother` : régression quadratique locale (LQR) robuste le long des segments de contour :
+    * Ajustement local d'un polynôme d'ordre 2 ($\hat{y}(u) = c_0 + c_1 u + c_2 u^2$) pondéré par un noyau gaussien ($\sigma = 22\text{ px}$) ;
+    * Repondération itérative par M-estimateur de Cauchy/Tukey ($w = \frac{1}{(1 + (dev/sc)^2)^2}$, $sc=3.0$, 6 itérations) traitant les départs de rues transversales comme des valeurs aberrantes ;
+    * Préservation intégrale des courbures authentiques des voies sans phénomène de rabotage ou d'écrasement ;
+    * Prise en charge naturelle des fenêtres unilatérales aux extrémités sans artefacts de bord.
+  * `RoundaboutDetector` : identification et modélisation géométrique des ronds-points :
+    * Détection des îlots centraux ($40 \le \text{surface} \le 9000$, $\text{solidité} \ge 0.90$) et ajustement d'ellipse algébrique directe ;
+    * Sondage radial (240 rayons) à travers l'anneau routier pour identifier le bord externe de la chaussée et ajustement robuste de l'ellipse extérieure sur le mode bas ;
+    * Filtrage des ronds-points traversés par le contour du territoire ($0.75 \le \rho \le 1.3$, recouvrement $> 20\%$).
+  * `HermiteSplineConnector` : découpage du contour aux points de contact $i_A$ et $i_B$, calcul des tangentes unitaires de chaussée et d'ellipse, sélection de l'arc extérieur et transition continue $C^1$ sans boucle via des splines cubiques d'Hermite.
+* **Critère de validation :**
+  * Élimination complète des marches d'escalier du raster ;
+  * Préservation exacte des angles de carrefours sans arrondissement excessif ;
+  * Suivi fidèle des grandes courbes de routes sans aplatissement intérieur ;
+  * Jonction visuelle parfaite des ronds-points sans cassure anguleuse ni boucle indésirable.
+
+---
+
+## 🎨 Sprint 7 : Rendu Sub-Pixel Supersampling (SS=4), Export RGBA & Intégration CLI
+* **Objectif :** Produire les livrables graphiques finaux avec couverture continue par suréchantillonnage vectoriel ($SS=4$) et rendre le pipeline V2 accessible en ligne de commande avec des critères de validation mesurables.
 * **Package cible :** `com.sam102022.photoshop.v2.render` / `com.sam102022.photoshop.cli`
 * **Livrables :**
-  * `SubpixelAlphaRenderer` : génération d'une transition alpha sub-pixel localisée autour de la frontière géométrique afin d'obtenir un rendu visuellement cohérent avec l'anti-aliasing de la carte source (sans prétendre modéliser le mécanisme interne propriétaire de Google Maps).
-  * `ImageClipper` : assemblage RGBA 32-bit de l'image détourée finale (`clipped.png`), du masque alpha (`mask.png`) et de l'overlay de diagnostic avec contour rouge (`overlay.png`).
-  * `V2CliRunner` : commande CLI dédiée (ex: `--v2` ou binaire dédié) avec paramètres documentés.
+  * `SupersampleRenderer` : rastérisation vectorielle haute résolution sur une grille agrandie $\times 4$ ($SS=4$) avec compensation de décalage de demi-pixel ($+0.5\text{ px}$, passage des centres aux bords de pixels), puis sous-échantillonnage par boîte (*box filter*) produisant un masque de couverture continue $\alpha \in [0.0, 1.0]$.
+  * `ImageClipper` : assemblage RGBA 32-bit de l'image détourée finale (`clipped.png`), du masque alpha de découpe (`mask.png`) et de l'image de diagnostic avec tracé du contour extérieur rouge (`overlay.png`).
+  * `V2CliRunner` : interface CLI de production supportant le drapeau `--v2` et l'ensemble des hyperparamètres documentés (`--hi`, `--lo`, `--eps`, `--rho`, `--sig`, `--corner`, `--r0`, `--l`, `--zr`).
 * **Critère de validation final :**
   * Pipeline complet exécuté en $\le 5$ secondes sur `Territoire CA01` ;
   * Aucune fuite vers les cellules `OUTSIDE` ;
-  * Les `BoundaryRoads` sont correctement intégrées ;
-  * Les routes séparant deux zones restent neutres en mode `ZONE` ;
-  * Les îlots/ronds-points sont résolus par la topologie ;
-  * La frontière finale est strictement cohérente avec le `RoadMask` ;
-  * Rendu visuellement équivalent ou amélioré par rapport au prototype Python ;
-  * Critères quantitatifs mesurables : IoU V2 vs référence, distance frontière (Hausdorff) et écart de surface.
+  * Les `BoundaryRoads` sont correctement intégrées jusqu'au bord externe ;
+  * Les routes séparant deux zones respectent le partage médian en mode `ZONE` ;
+  * Les ronds-points et carrefours présentent une courbure continue et harmonieuse ;
+  * Rendu visuellement et métriquement équivalent à la sortie étalon `CA01_clipped_v5.png` ;
+  * Critères quantitatifs mesurables : IoU V2 vs référence Python V5 $\ge 0.99$, écart de surface $< 0.5\%$.
 
 ---
 
@@ -279,18 +319,62 @@ public record CellSelection(
 * **Justification des identifiants (`Set<Integer>`) :** L'usage des IDs évite tout couplage fort avec l'instance de `Cell` et garantit une sérialisation/manipulation légère et découplée :
   $$\text{CellGraph} \longrightarrow \text{CellSelection} \longrightarrow \text{BoundaryReconstruction}$$
 
-#### Sprint 5 ➔ Sprint 6 : `FinalMask`
+#### Sprint 5 ➔ Sprint 6 : `ConsolidatedMask`
 ```java
-public record FinalMask(
+public record ConsolidatedMask(
         int width,
         int height,
-        BinaryMask mask
+        BinaryMask mask,
+        int offsetX,
+        int offsetY
 ) {
+    public ConsolidatedMask {
+        if (width <= 0 || height <= 0) {
+            throw new IllegalArgumentException("Les dimensions doivent être strictement positives : " + width + "x" + height);
+        }
+        if (mask == null) {
+            throw new IllegalArgumentException("Le masque consolidé ne peut pas être null.");
+        }
+    }
 }
 ```
-* **Principe d'isolation géométrie / rendu :** À ce stade, aucune notion d'alpha ou d'anti-aliasing n'est présente :
-  $$\text{FinalMask} \longrightarrow \text{SubpixelAlphaRenderer} \longrightarrow \text{Image RGBA}$$
-* **Invariant respecté :** *La décision géométrique ne dépend jamais du rendu.*
+* **Principe d'isolation géométrique :** Le masque consolidé `mask` représente l'union discrète des parcelles et de l'expansion géodésique routière dans la boîte englobante locale (définie par `offsetX`, `offsetY`). Il est purement binaire ($0$ ou $1$).
+
+#### Sprint 6 ➔ Sprint 7 : `SmoothVectorContour`
+```java
+public record SmoothVectorContour(
+        List<PixelPoint> points,
+        List<Integer> cornerIndices,
+        int width,
+        int height
+) {
+    public SmoothVectorContour {
+        if (points == null || points.size() < 3) {
+            throw new IllegalArgumentException("Le contour lissé doit contenir au moins 3 points.");
+        }
+        if (cornerIndices == null) {
+            throw new IllegalArgumentException("La liste des indices de coins ne peut pas être null.");
+        }
+    }
+}
+```
+* **Principe d'isolation vectoriel / rendu :** Le contour vectoriel est une polyligne continue sub-pixel (flottante) régularisée par régression quadratique locale (`robust_lqr`) avec raccordements d'ellipses et splines d'Hermite pour les ronds-points. Aucune notion d'anti-aliasing matriciel ou d'alpha n'est introduite à ce stade.
+
+#### Sprint 7 : `RenderResult`
+```java
+public record RenderResult(
+        BufferedImage clipped,
+        BufferedImage mask,
+        BufferedImage overlay
+) {
+    public RenderResult {
+        if (clipped == null || mask == null || overlay == null) {
+            throw new IllegalArgumentException("Les images de résultat ne peuvent pas être null.");
+        }
+    }
+}
+```
+* **Sortie finale de production :** `clipped` (RGBA 32-bit), `mask` (niveaux de gris 8-bit avec valeurs d'opacité continues $[0..255]$ issues du supersampling $SS=4$), et `overlay` (RGB avec contour rouge de diagnostic).
 
 ---
 
@@ -387,12 +471,13 @@ Cette matrice permet d'isoler immédiatement le sprint responsable en cas de div
 
 | Sprint | Entrée | Sortie | Test Pivot & Critère d'Acceptation |
 | :--- | :--- | :--- | :--- |
-| **S1** | JSON `CA01` | `PolygonMask` | Projection GPS ➔ Pixels conforme à l'emprise ($3810 \times 2130$) |
+| **S1** | JSON `CA01` | `PolygonMask` | Projection GPS ➔ Pixels conforme à l'emprise ($3810 \times 2130$) *(Validé)* |
 | **S2** | Image `CA01` | `RoadMask` | Extraction colorimétrique et fermeture sans perte d'axes secondaires |
 | **S3** | `RoadMask` | `CellGraph` | Cellules 4-connexes étanches + `RoadInterfaces` associées |
 | **S4** | `PolygonMask` + `CellGraph` | `CellSelection` | Vote déterministe (21 cellules pleines / 6 partielles) |
-| **S5** | `CellGraph` + `CellSelection` | `FinalMask` | Reconstruction des frontières routières + ronds-points résolus par topologie |
-| **S6** | `FinalMask` + Image source | `PNG RGBA` | Transition alpha sub-pixel, CLI `--v2`, IoU et métriques géométriques |
+| **S5** | `CellGraph` + `CellSelection` | `ConsolidatedMask` | Reconstruction des frontières routières (EDT + MCP borné) + îlots résiduels |
+| **S6** | `ConsolidatedMask` | `SmoothVectorContour` | Contour sub-pixel, LQR robuste sans rabotage, ronds-points par ellipses & Hermite |
+| **S7** | `SmoothVectorContour` + Image source | `RenderResult` | Supersampling vectoriel $\times 4$, découpe RGBA, IoU $\ge 0.99$ vs python V5 |
 
 ---
 
@@ -442,21 +527,33 @@ Image ──────────► ┌───────▼────�
                   ┌───────────────┐
                   │    SPRINT 5   │
                   │ BoundaryRoad  │
-                  │ Geodesic      │
-                  │ IslandResolver│
-                  │ TERRITORY/ZONE│
+                  │ Geodesic MCP  │
+                  │ Morpho Opening│
+                  │ HoleResolver  │
                   └───────┬───────┘
                           │
-                       FinalMask
+                  ConsolidatedMask Mc
                           │
                           ▼
                   ┌───────────────┐
                   │    SPRINT 6   │
-                  │ AlphaRenderer │
+                  │ MarchingSquare│
+                  │ CornerDetector│
+                  │ RobustLqr     │
+                  │ RoundaboutFit │
+                  │ HermiteSpline │
+                  └───────┬───────┘
+                          │
+                  SmoothVectorContour
+                          │
+                          ▼
+                  ┌───────────────┐
+                  │    SPRINT 7   │
+                  │ Supersample4x │
                   │ ImageClipper  │
                   │ V2 CLI        │
                   └───────┬───────┘
                           │
                           ▼
-                     PNG RGBA
+                     RenderResult (PNG RGBA)
 ```
