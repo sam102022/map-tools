@@ -13,9 +13,16 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+/**
+ * Tests unitaires validant les invariants, les politiques et la navigation
+ * au sein des modèles de domaine du package {@link com.sam102022.photoshop.v2.vote}.
+ */
 @DisplayName("Tests unitaires du modèle de domaine v2.vote")
 class CellDomainModelTest {
 
+    /**
+     * Valide les seuils par défaut et les rejets défensifs sur configuration invalide.
+     */
     @Test
     @DisplayName("CellSelectionPolicy : seuils par défaut et validation des invariants")
     void testPolicyDefaultsAndValidation() {
@@ -29,6 +36,9 @@ class CellDomainModelTest {
         assertThrows(IllegalArgumentException.class, () -> new CellSelectionPolicy(0.8, 1.2));
     }
 
+    /**
+     * Valide la cohérence des propriétés et les contrôles défensifs de CellDecision.
+     */
     @Test
     @DisplayName("CellDecision : validation des invariants")
     void testCellDecisionValidation() {
@@ -44,6 +54,9 @@ class CellDomainModelTest {
         assertThrows(IllegalArgumentException.class, () -> new CellDecision(1, 100, 150, 1.5, CellState.INSIDE));
     }
 
+    /**
+     * Valide la navigation dans CellSelection et l'immutabilité stricte des collections encapsulées.
+     */
     @Test
     @DisplayName("CellSelection : navigation et immutabilité")
     void testCellSelectionNavigation() {
@@ -66,5 +79,9 @@ class CellDomainModelTest {
         assertFalse(selection.isRetained(3));
         assertEquals(Optional.of(d1), selection.findDecision(1));
         assertEquals(Optional.empty(), selection.findDecision(99));
+
+        // Vérification de l'immutabilité des collections
+        assertThrows(UnsupportedOperationException.class, () -> selection.insideCellIds().add(4));
+        assertThrows(UnsupportedOperationException.class, () -> selection.decisions().put(4, d1));
     }
 }

@@ -2,7 +2,6 @@ package com.sam102022.photoshop.v2.vote;
 
 import com.sam102022.photoshop.core.model.BinaryMask;
 
-import java.util.Collections;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -45,7 +44,7 @@ public record CellSelection(
         outsideCellIds = Set.copyOf(outsideCellIds);
         partialCellIds = Set.copyOf(partialCellIds);
         decisions = Map.copyOf(decisions);
-        partialCellMasks = Collections.unmodifiableMap(Map.copyOf(partialCellMasks));
+        partialCellMasks = Map.copyOf(partialCellMasks);
     }
 
     /**
