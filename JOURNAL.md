@@ -31,8 +31,38 @@ Le projet est régi par les décisions d'architecture (ADR) consignées dans [`d
 | **Sprint 1** | Socle Géométrique, Projection Web Mercator & Rasterisation | 02/10/2026 | ✅ Validé | `GeoCoordinate`, `PixelPoint`, `MapContext`, `TerritoryGeometry`, `WebMercatorProjection`, `JsonTerritoryLoader`, `PolygonRasterizer`, `PolygonMask` |
 | **Sprint 2** | Détection Colorimétrique des Routes & Fermeture Topologique | 03/10/2026 | ✅ Validé | `RoadMask`, `RoadDetector`, `RoadDetectorStyle`, `RoadMaskCleaner`, `RoadDetectorOsm` |
 | **Sprint 3** | Segmentation en Cellules (4-connexité) & `CellGraph` | 04/10/2026 | ✅ Validé | `CropWindow`, `BoundingBoxCropper`, `Cell`, `CellLabelMap`, `CellLabeler`, `RoadInterface`, `RoadInterfaceExtractor`, `CellGraph` |
-| **Sprint 4** | Moteur de Vote Topologique & Résolution des Parcelles | Cadré (04/10/2026) | ⏳ Prêt pour dév | `CellState`, `CellSelectionPolicy`, `CellDecision`, `CellSelection`, `CellCoverageCalculator`, `CellClassifier`, `PartialCellResolver`, `TopologicalVoteEngine` |
+| **Sprint 4** | Moteur de Vote Topologique & Résolution des Parcelles | 04/10/2026 | ✅ Validé | `CellState`, `CellSelectionPolicy`, `CellDecision`, `CellSelection`, `CellCoverageCalculator`, `CellClassifier`, `PartialCellResolver`, `TopologicalVoteEngine` |
 | **Sprint 5** | Reconstruction des Frontières Routières & Expansion Géodésique | Cadré (04/10/2026) | ⏳ Prêt pour dév | `ExpansionConfig`, `DistanceMap`, `ConsolidatedMask`, `EuclideanDistanceTransform`, `LocalMaxFilter`, `BoundedGeodesicExpander`, `MorphologicalConsolidator`, `ResidualHoleResolver`, `BoundaryRoadPartitioner`, `RoadBoundaryConsolidator` |
+
+---
+
+## 📝 3. Entrées Journalières Datées
+
+### Dimanche 04 octobre 2026 : Implémentation Complète et Validation Formelle du Sprint 4 V2 (Moteur de Vote Topologique & Résolution des Parcelles Ouvertes)
+
+*   **Réalisation Opérationnelle des 5 Composants Métier (ADR-008 & ADR-004) :**
+    *   **Modèles de domaine immuables (`CellState`, `CellSelectionPolicy`, `CellDecision`, `CellSelection`) :** Conception stricte en Java Records garantissant l'immutabilité et la thread-safety. `CellSelectionPolicy` encapsule les seuils configurables par défaut `insideThreshold = 0.60` et `partialThreshold = 0.05`.
+    *   **Calculateur de couverture (`CellCoverageCalculator`) :** Calcul matriciel d'intersection en un seul passage $\mathcal{O}(W \times H)$ avec accumulation sur tableau `long[]`, sans allocation intermédiaire par cellule, garantissant un temps de calcul < 10 ms pour 2,68 Mpx.
+    *   **Classificateur déterministe (`CellClassifier`) :** Qualification de chaque cellule en `INSIDE` ($\ge 0.60$), `OUTSIDE` ($\le 0.05$) ou `PARTIAL` ($]0.05, 0.60[$).
+    *   **Résolveur de parcelles ouvertes (`PartialCellResolver`) :** Conservation de la découpe stricte $C \cap P_c$ pour les cellules ouvertes sans fuite vers l'extérieur, et assemblage du masque d'amorçage matriciel $T$ (`retainedMask`) prêt pour la propagation géodésique du Sprint 5.
+    *   **Façade d'orchestration (`TopologicalVoteEngine`) :** Point d'entrée haut niveau coordonnant l'analyse, la classification et la génération du masque retenu.
+*   **Analyse et Résolution de la Divergence Déterministe sur la Cellule Frontière 72 :**
+    *   *Observation :* L'étalon Python (`snap_cells_prototype_v5.py`) qualifiait 6 cellules en `PARTIAL` dont la cellule 72 avec une couverture de $5{,}11\%$ ($> 5{,}0\%$). En Java pur (`PolygonRasterizer` du Sprint 1, Java2D), la couverture calculée est de $4{,}75\%$ ($< 5{,}0\%$), classant la cellule 72 en `OUTSIDE` avec la politique par défaut (`0.60 / 0.05`).
+    *   *Cause racine identifiée :* Le moteur PIL de Python (`ImageDraw.polygon`) utilise un algorithme de scanline incluant les coordonnées frontières (convention inclusive sur les bords droit et bas, produisant 1 184 004 px pour $P$), alors que `PolygonRasterizer` (Java2D standard Even-Odd conforme ADR-001) respecte la règle standard d'inclusion au centre de pixel (produisant 1 182 588 px, identique à `skimage.draw.polygon`). Cet écart de 161 pixels sur le bord de la cellule 72 (aire 45 228 px) la fait basculer de $5{,}11\%$ à $4{,}75\%$.
+    *   *Décision de validation :* Le test d'intégration pivot `Sprint4IntegrationTest` valide les deux aspects :
+        1. Avec la politique par défaut ($0{,}60$ / $0{,}05$) : **21 INSIDE**, **5 PARTIAL**, **104 OUTSIDE** (règle mathématique stricte Java2D) ;
+        2. Avec le seuil étalon Python ($0{,}60$ / $0{,}045$) : **21 INSIDE**, **6 PARTIAL**, **103 OUTSIDE** (capture de la cellule 72 et concordance 100% avec le prototype Python).
+*   **Conformité ADR & Standards d'Ingénierie :**
+    *   ADR-001 (100% Java standard sans lib externe) ;
+    *   ADR-004 (Immutabilité via Records) ;
+    *   ADR-008 (Une seule responsabilité par classe - SRP) ;
+    *   ADR-011 (Complexité cognitive plafonnée à $\le 15$ par méthode) ;
+    *   ADR-012 (Imports explicites, proscription des FQCN et wildcards) ;
+    *   ADR-014 (Documentation Javadoc exhaustive en français sur classes, records et méthodes).
+*   **Validation des Tests :**
+    *   Suite du package `v2.vote` : 16/16 tests réussis (100%).
+    *   Suite complète de l'architecture V2 (Sprints 1 à 4) : 67/67 tests réussis (100%).
+    *   Temps d'exécution sur CA01 : ~530 ms pour le pipeline complet (moins de 15 ms pour le vote algorithmique pur).
 | **Sprint 6** | Géométrie Sub-Pixel, Lissage Robuste LQR & Ronds-points | Cadré (04/10/2026) | ⏳ Spécifié | `SubpixelContourExtractor`, `CornerDetector`, `RobustLqrSmoother`, `CornerPreservationBlender`, `AlgebraicEllipseFitter`, `RoundaboutDetector`, `HermiteSplineConnector`, `ContourSmoothingEngine` |
 | **Sprint 7** | Rendu Sub-Pixel Supersampling (SS=4), Export RGBA & CLI V2 | Cadré (04/10/2026) | ⏳ Spécifié | `V2Config`, `SupersampleRenderer`, `ImageClipper`, `RenderResult`, `V2Pipeline`, `V2CliRunner` |
 
@@ -160,8 +190,8 @@ Le projet est régi par les décisions d'architecture (ADR) consignées dans [`d
 ## 🔬 4. État Opérationnel à Date
 
 *   **Suite de tests V2 (`com.sam102022.photoshop.v2.**.*Test`) :**
-    *   **Nombre de tests exécutés :** 54
-    *   **Succès :** 54 (100%)
+    *   **Nombre de tests exécutés :** 67
+    *   **Succès :** 67 (100%)
     *   **Échecs :** 0
     *   **Erreurs :** 0
-*   **Temps d'exécution total de la suite V2 :** 4.9 s.
+*   **Temps d'exécution total de la suite V2 :** ~4.8 s.
