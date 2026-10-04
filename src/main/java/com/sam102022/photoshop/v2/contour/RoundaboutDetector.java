@@ -85,6 +85,14 @@ public class RoundaboutDetector {
         return Collections.unmodifiableList(roundabouts);
     }
 
+    /**
+     * Évalue si une cellule répond aux critères géométriques préalables d'un îlot central de giratoire.
+     *
+     * @param cell Cellule à analyser.
+     * @param w    Largeur du masque.
+     * @param h    Hauteur du masque.
+     * @return true si la cellule est un îlot potentiel intérieur.
+     */
     private boolean isPotentialIsland(Cell cell, int w, int h) {
         if (cell.area() < 40 || cell.area() > 9000) {
             return false;
@@ -92,6 +100,13 @@ public class RoundaboutDetector {
         return cell.minX() > 1 && cell.minY() > 1 && cell.maxX() < w - 1 && cell.maxY() < h - 1;
     }
 
+    /**
+     * Extrait le contour sub-pixel local d'une cellule îlot et le replace dans le repère global.
+     *
+     * @param cell     Cellule candidate.
+     * @param labelMap Matrice des étiquettes.
+     * @return Liste des points du contour de l'îlot.
+     */
     private List<PixelPoint> extractIslandContour(Cell cell, CellLabelMap labelMap) {
         int x0 = cell.minX();
         int y0 = cell.minY();
@@ -115,6 +130,13 @@ public class RoundaboutDetector {
         return globalContour;
     }
 
+    /**
+     * Valide la géométrie elliptique de l'îlot central selon son élongation et ses résidus RMS.
+     *
+     * @param cell    Cellule d'origine.
+     * @param contour Points du contour de l'îlot.
+     * @return Optional contenant l'ellipse d'îlot validée ou Optional.empty() si non elliptique.
+     */
     private Optional<EllipseModel> validateIslandEllipse(Cell cell, List<PixelPoint> contour) {
         Optional<EllipseModel> opt = ellipseFitter.fit(contour);
         if (opt.isEmpty()) {
@@ -142,6 +164,16 @@ public class RoundaboutDetector {
         return Optional.of(ell);
     }
 
+    /**
+     * Lance des sondes radiales réparties uniformément depuis le centre pour détecter la sortie de voie.
+     *
+     * @param rc        Masque binaire de la chaussée fermée.
+     * @param cx        Abscisse du centre de l'îlot.
+     * @param cy        Ordonnée du centre de l'îlot.
+     * @param maxRadius Rayon maximal exploré en pixels.
+     * @param numRays   Nombre de rayons émis.
+     * @return Résultat du sondage radial (points de contact et distances).
+     */
     private RaySamplingResult castRadialRays(BinaryMask rc, double cx, double cy, double maxRadius, int numRays) {
         int w = rc.getWidth();
         int h = rc.getHeight();
@@ -184,6 +216,13 @@ public class RoundaboutDetector {
         return new RaySamplingResult(points, distArr);
     }
 
+    /**
+     * Ajuste itérativement une ellipse sur les points du bord extérieur de l'anneau routier.
+     *
+     * @param sampling   Points et distances issus du sondage radial.
+     * @param islandArea Surface en pixels de l'îlot central.
+     * @return Optional contenant l'anneau extérieur modélisé ou Optional.empty().
+     */
     private Optional<FittedRing> fitExteriorRing(RaySamplingResult sampling, double islandArea) {
         double[] dists = sampling.distances();
         List<PixelPoint> points = sampling.points();
@@ -254,6 +293,13 @@ public class RoundaboutDetector {
         return Optional.of(new FittedRing(bestModel, bestInlierRatio));
     }
 
+    /**
+     * Calcule un percentile linéaire sur un tableau de doubles non trié.
+     *
+     * @param values     Tableau de valeurs numériques.
+     * @param percentile Rang de percentile compris entre 0.0 et 100.0.
+     * @return Valeur interpolée au percentile spécifié.
+     */
     private double computePercentile(double[] values, double percentile) {
         if (values.length == 0) {
             return 0.0;
@@ -267,6 +313,19 @@ public class RoundaboutDetector {
         return sorted[low] * (1.0 - weight) + sorted[high] * weight;
     }
 
+    /**
+     * Record interne encapsulant les résultats du sondage radial.
+     *
+     * @param points    Points de sortie de la chaussée.
+     * @param distances Distances mesurées depuis le centre.
+     */
     private record RaySamplingResult(List<PixelPoint> points, double[] distances) {}
+
+    /**
+     * Record interne encapsulant une ellipse d'anneau ajustée avec son taux d'inliers.
+     *
+     * @param ellipse     Modèle d'ellipse ajusté.
+     * @param inlierRatio Taux de concordance des rayons (inliers).
+     */
     private record FittedRing(EllipseModel ellipse, double inlierRatio) {}
 }

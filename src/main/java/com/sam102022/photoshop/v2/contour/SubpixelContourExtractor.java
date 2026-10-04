@@ -19,6 +19,12 @@ import java.util.Set;
 public class SubpixelContourExtractor {
 
     /**
+     * Initialise une nouvelle instance de l'extracteur de contour sub-pixel Marching Squares 2D.
+     */
+    public SubpixelContourExtractor() {
+    }
+
+    /**
      * Extrait le contour sub-pixel fermé lissé à pas régulier depuis un masque binaire.
      *
      * @param mask Masque binaire d'entrée.
@@ -44,6 +50,9 @@ public class SubpixelContourExtractor {
 
     /**
      * Comble les cavités intérieures par marquage BFS de l'extérieur infini.
+     *
+     * @param mask Masque binaire avec trous intérieurs éventuels.
+     * @return Masque binaire comblé étanche.
      */
     private BinaryMask fillHoles(BinaryMask mask) {
         int w = mask.getWidth();
@@ -85,6 +94,16 @@ public class SubpixelContourExtractor {
         return result;
     }
 
+    /**
+     * Ajoute un pixel d'arrière-plan dans la file de propagation BFS s'il n'est pas encore exploré.
+     *
+     * @param mask    Masque binaire.
+     * @param reached Tableau de visite des pixels.
+     * @param queue   File BFS.
+     * @param x       Abscisse du pixel.
+     * @param y       Ordonnée du pixel.
+     * @param w       Largeur de l'image.
+     */
     private void enqueueIfBackground(BinaryMask mask, boolean[] reached, ArrayDeque<Integer> queue, int x, int y, int w) {
         int idx = y * w + x;
         if (!reached[idx] && !mask.get(x, y)) {
@@ -95,6 +114,9 @@ public class SubpixelContourExtractor {
 
     /**
      * Extrait les segments de Marching Squares sur la grille avec marge de 1 pixel et retourne la boucle maximale.
+     *
+     * @param mask Masque binaire comblé.
+     * @return Liste ordonnée des sommets sub-pixels de la plus grande boucle extérieure.
      */
     private List<PixelPoint> extractMarchingSquaresLoop(BinaryMask mask) {
         int w = mask.getWidth();
@@ -114,6 +136,16 @@ public class SubpixelContourExtractor {
         return findLongestLoop(edgeTransitions, pw);
     }
 
+    /**
+     * Calcule l'indice de cas Marching Squares (0 à 15) pour la cellule 2x2 à la position (x, y).
+     *
+     * @param mask Masque binaire d'origine.
+     * @param x    Abscisse dans la grille avec marge.
+     * @param y    Ordonnée dans la grille avec marge.
+     * @param w    Largeur du masque sans marge.
+     * @param h    Hauteur du masque sans marge.
+     * @return Code binaire sur 4 bits (tl | tr &lt;&lt; 1 | br &lt;&lt; 2 | bl &lt;&lt; 3).
+     */
     private int computeCellCode(BinaryMask mask, int x, int y, int w, int h) {
         int v0 = getPaddedValue(mask, x, y, w, h);
         int v1 = getPaddedValue(mask, x + 1, y, w, h);
@@ -122,6 +154,16 @@ public class SubpixelContourExtractor {
         return v0 | (v1 << 1) | (v2 << 2) | (v3 << 3);
     }
 
+    /**
+     * Récupère la valeur binaire (0 ou 1) d'un point dans la grille avec marge de 1 pixel.
+     *
+     * @param mask Masque binaire.
+     * @param px   Abscisse avec marge.
+     * @param py   Ordonnée avec marge.
+     * @param w    Largeur du masque.
+     * @param h    Hauteur du masque.
+     * @return 1 si le pixel appartient au masque, 0 sinon.
+     */
     private int getPaddedValue(BinaryMask mask, int px, int py, int w, int h) {
         int x = px - 1;
         int y = py - 1;
@@ -131,11 +173,28 @@ public class SubpixelContourExtractor {
         return 0;
     }
 
+    /**
+     * Encode de façon unique une arête de cellule par un identifiant 64-bit compact.
+     *
+     * @param x           Abscisse de la cellule.
+     * @param y           Ordonnée de la cellule.
+     * @param orientation 0 pour arête horizontale (x+0.5, y), 1 pour verticale (x, y+0.5).
+     * @param pw          Largeur de grille avec marge.
+     * @return Clé 64-bit unique identifiant le milieu d'arête.
+     */
     private long encodeEdge(int x, int y, int orientation, int pw) {
-        // orientation: 0 = horizontal (x+0.5, y), 1 = vertical (x, y+0.5)
         return (((long) (y * (pw + 1) + x)) << 1) | orientation;
     }
 
+    /**
+     * Enregistre les segments orientés reliant les milieux d'arêtes selon le cas Marching Squares.
+     *
+     * @param code        Code de cas (0 à 15).
+     * @param x           Abscisse de cellule.
+     * @param y           Ordonnée de cellule.
+     * @param pw          Largeur de grille.
+     * @param transitions Table de routage sommet de départ -&gt; sommet d'arrivée.
+     */
     private void addSegmentsForCode(int code, int x, int y, int pw, Map<Long, Long> transitions) {
         long top = encodeEdge(x, y, 0, pw);
         long right = encodeEdge(x + 1, y, 1, pw);
@@ -161,6 +220,13 @@ public class SubpixelContourExtractor {
         }
     }
 
+    /**
+     * Parcourt les segments chaînés et sélectionne la boucle fermée de périmètre maximal.
+     *
+     * @param transitions Table de chaînage des arêtes.
+     * @param pw          Largeur de grille avec marge.
+     * @return Liste ordonnée des points de la boucle principale.
+     */
     private List<PixelPoint> findLongestLoop(Map<Long, Long> transitions, int pw) {
         Set<Long> visited = new HashSet<>();
         List<PixelPoint> bestLoop = new ArrayList<>();
@@ -178,6 +244,15 @@ public class SubpixelContourExtractor {
         return bestLoop;
     }
 
+    /**
+     * Suit de manière déterministe les transitions orientées pour former un polygone fermé continu.
+     *
+     * @param startEdge   Arête de départ.
+     * @param transitions Table des transitions d'arêtes.
+     * @param visited     Ensemble des arêtes visitées.
+     * @param pw          Largeur de grille.
+     * @return Boucle fermée ordonnée des sommets géométriques.
+     */
     private List<PixelPoint> traceLoop(Long startEdge, Map<Long, Long> transitions, Set<Long> visited, int pw) {
         List<PixelPoint> loop = new ArrayList<>();
         Long current = startEdge;
@@ -193,6 +268,13 @@ public class SubpixelContourExtractor {
         return loop;
     }
 
+    /**
+     * Décode une clé d'arête en point sub-pixel dans le repère local (avec retrait de la marge de 1 px).
+     *
+     * @param edgeKey Clé 64-bit de l'arête.
+     * @param pw      Largeur de grille.
+     * @return Point géométrique sub-pixel (x, y).
+     */
     private PixelPoint decodeEdgePoint(long edgeKey, int pw) {
         int orientation = (int) (edgeKey & 1L);
         long pos = edgeKey >> 1;
@@ -209,6 +291,10 @@ public class SubpixelContourExtractor {
 
     /**
      * Rééchantillonne la boucle fermée à pas curviligne équidistant.
+     *
+     * @param rawLoop Boucle discrète issue du Marching Squares.
+     * @param step    Pas de rééchantillonnage uniforme en pixels.
+     * @return Liste ordonnée immuable des points rééchantillonnés.
      */
     private List<PixelPoint> resampleCurvilinear(List<PixelPoint> rawLoop, double step) {
         int n = rawLoop.size();

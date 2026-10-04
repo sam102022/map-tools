@@ -12,6 +12,12 @@ import java.util.List;
 public class CornerPreservationBlender {
 
     /**
+     * Initialise une nouvelle instance du modulateur par fondu progressif de coins.
+     */
+    public CornerPreservationBlender() {
+    }
+
+    /**
      * Interpole en douceur entre contour brut et contour lissé selon la proximité des coins.
      *
      * @param rawContour      Contour brut rééchantillonné.
@@ -51,6 +57,14 @@ public class CornerPreservationBlender {
         return Collections.unmodifiableList(blended);
     }
 
+    /**
+     * Calcule la distance curviligne minimale périodique d'un indice à l'ensemble des coins.
+     *
+     * @param idx     Indice courant le long du contour fermé.
+     * @param corners Liste des indices de coins.
+     * @param n       Nombre total de points du contour fermé.
+     * @return Distance minimale en nombre de pas (pixels).
+     */
     private double computeMinCornerDistance(int idx, List<Integer> corners, int n) {
         double minDist = Double.MAX_VALUE;
         for (int c : corners) {

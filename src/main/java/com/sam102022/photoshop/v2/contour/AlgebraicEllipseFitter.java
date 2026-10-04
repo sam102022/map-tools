@@ -14,6 +14,12 @@ public class AlgebraicEllipseFitter {
     private static final double EPSILON = 1e-12;
 
     /**
+     * Initialise une nouvelle instance du solveur d'ellipses direct de Halir &amp; Flusser.
+     */
+    public AlgebraicEllipseFitter() {
+    }
+
+    /**
      * Ajuste une ellipse euclidienne sur un ensemble de points 2D.
      *
      * @param points Liste des points 2D (minimum 5 points non colinéaires).
@@ -92,6 +98,12 @@ public class AlgebraicEllipseFitter {
         return Math.hypot(xLocal - xt, yLocal - yt);
     }
 
+    /**
+     * Calcule la moyenne arithmétique des abscisses des points.
+     *
+     * @param points Liste des points 2D.
+     * @return Abscisse moyenne.
+     */
     private double computeMeanX(List<PixelPoint> points) {
         double sum = 0.0;
         for (PixelPoint p : points) {
@@ -100,6 +112,12 @@ public class AlgebraicEllipseFitter {
         return sum / points.size();
     }
 
+    /**
+     * Calcule la moyenne arithmétique des ordonnées des points.
+     *
+     * @param points Liste des points 2D.
+     * @return Ordonnée moyenne.
+     */
     private double computeMeanY(List<PixelPoint> points) {
         double sum = 0.0;
         for (PixelPoint p : points) {
@@ -108,6 +126,14 @@ public class AlgebraicEllipseFitter {
         return sum / points.size();
     }
 
+    /**
+     * Calcule l'écart-type combiné pour la normalisation d'échelle numérique.
+     *
+     * @param points Liste des points 2D.
+     * @param mx     Abscisse moyenne.
+     * @param my     Ordonnée moyenne.
+     * @return Échelle d'étalement géométrique des points.
+     */
     private double computeScale(List<PixelPoint> points, double mx, double my) {
         double sumSq = 0.0;
         for (PixelPoint p : points) {
@@ -118,6 +144,17 @@ public class AlgebraicEllipseFitter {
         return Math.sqrt(sumSq / (2.0 * points.size()));
     }
 
+    /**
+     * Accumule les matrices de dispersion S1, S2, S3 du problème de moindres carrés.
+     *
+     * @param points Points d'entrée.
+     * @param mx     Centre X.
+     * @param my     Centre Y.
+     * @param scale  Échelle de normalisation.
+     * @param s1     Matrice S1 (3x3) à incrémenter.
+     * @param s2     Matrice S2 (3x3) à incrémenter.
+     * @param s3     Matrice S3 (3x3) à incrémenter.
+     */
     private void accumulateScatterMatrices(List<PixelPoint> points, double mx, double my, double scale,
                                            double[][] s1, double[][] s2, double[][] s3) {
         for (PixelPoint p : points) {
@@ -141,6 +178,12 @@ public class AlgebraicEllipseFitter {
         }
     }
 
+    /**
+     * Calcule la matrice réduite M = C1^-1 * Q.
+     *
+     * @param q Matrice Q = S1 - S2 * S3^-1 * S2^T.
+     * @return Matrice réduite M (3x3).
+     */
     private double[][] computeReducedMatrixM(double[][] q) {
         double[][] m = new double[3][3];
         for (int col = 0; col < 3; col++) {
@@ -151,6 +194,12 @@ public class AlgebraicEllipseFitter {
         return m;
     }
 
+    /**
+     * Recherche le vecteur propre vérifiant la contrainte géométrique 4AC - B^2 &gt; 0.
+     *
+     * @param m Matrice réduite 3x3.
+     * @return Vecteur propre contraint normalisé [A, B, C], ou null si inexistant.
+     */
     private double[] findConstrainedEigenvector(double[][] m) {
         List<Double> roots = solveCharacteristicRoots(m);
         for (double lambda : roots) {
@@ -171,6 +220,12 @@ public class AlgebraicEllipseFitter {
         return null;
     }
 
+    /**
+     * Détermine les racines réelles de l'équation caractéristique d'une matrice 3x3.
+     *
+     * @param m Matrice 3x3.
+     * @return Liste des valeurs propres réelles.
+     */
     private List<Double> solveCharacteristicRoots(double[][] m) {
         double tr = m[0][0] + m[1][1] + m[2][2];
         double[][] m2 = multiply3x3(m, m);
@@ -184,6 +239,14 @@ public class AlgebraicEllipseFitter {
         return solveCubicRoots(c2, c1, c0);
     }
 
+    /**
+     * Résout analytiquement l'équation cubique x^3 + a*x^2 + b*x + c = 0 par la méthode trigonométrique de Cardano.
+     *
+     * @param a Coefficient du second degré.
+     * @param b Coefficient du premier degré.
+     * @param c Terme constant.
+     * @return Liste des racines réelles trouvées.
+     */
     private List<Double> solveCubicRoots(double a, double b, double c) {
         List<Double> roots = new ArrayList<>();
         double p = b - a * a / 3.0;
@@ -207,6 +270,12 @@ public class AlgebraicEllipseFitter {
         return roots;
     }
 
+    /**
+     * Détermine un vecteur non trivial du noyau d'une matrice singulière 3x3 par produit vectoriel de lignes.
+     *
+     * @param a Matrice singulière 3x3.
+     * @return Vecteur propre du noyau, ou null si dégénéré.
+     */
     private double[] findNullspaceVector(double[][] a) {
         double[] c01 = crossProduct(a[0], a[1]);
         double[] c02 = crossProduct(a[0], a[2]);
@@ -229,6 +298,13 @@ public class AlgebraicEllipseFitter {
         return maxNorm > 1e-14 ? best : null;
     }
 
+    /**
+     * Calcule les coefficients linéaires [D, F, G] à partir des coefficients quadratiques [A, B, C].
+     *
+     * @param s3InvS2T Matrice S3^-1 * S2^T (3x3).
+     * @param a1       Vecteur [A, B, C].
+     * @return Vecteur des coefficients linéaires [D, F, G].
+     */
     private double[] computeLinearCoefficients(double[][] s3InvS2T, double[] a1) {
         double[] a2 = new double[3];
         for (int r = 0; r < 3; r++) {
@@ -241,6 +317,16 @@ public class AlgebraicEllipseFitter {
         return a2;
     }
 
+    /**
+     * Extrait les paramètres canoniques d'ellipse (centre, demi-axes, orientation) depuis les coefficients algébriques.
+     *
+     * @param a1    Coefficients quadratiques [A, B, C].
+     * @param a2    Coefficients linéaires [D, F, G].
+     * @param mx    Centre de dénormalisation X.
+     * @param my    Centre de dénormalisation Y.
+     * @param scale Facteur d'échelle de dénormalisation.
+     * @return Optional contenant le modèle d'ellipse géométrique ou Optional.empty() si hyperbolique/dégénéré.
+     */
     private Optional<EllipseModel> extractEllipseParameters(double[] a1, double[] a2,
                                                            double mx, double my, double scale) {
         double aCoeff = a1[0];
@@ -294,6 +380,12 @@ public class AlgebraicEllipseFitter {
         ));
     }
 
+    /**
+     * Inverse analytiquement une matrice symétrique 3x3 par sa comatrice et son déterminant.
+     *
+     * @param m Matrice 3x3 d'entrée.
+     * @return Matrice inverse 3x3, ou null si singulière.
+     */
     private double[][] invert3x3(double[][] m) {
         double det = determinant3x3(m);
         if (Math.abs(det) < EPSILON) {
@@ -317,12 +409,25 @@ public class AlgebraicEllipseFitter {
         return inv;
     }
 
+    /**
+     * Calcule le déterminant d'une matrice 3x3 par développement selon la première ligne.
+     *
+     * @param m Matrice 3x3.
+     * @return Déterminant scalaire.
+     */
     private double determinant3x3(double[][] m) {
         return m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
                 - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
                 + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
     }
 
+    /**
+     * Effectue le produit matriciel de deux matrices 3x3.
+     *
+     * @param a Première matrice 3x3.
+     * @param b Deuxième matrice 3x3.
+     * @return Produit a * b (3x3).
+     */
     private double[][] multiply3x3(double[][] a, double[][] b) {
         double[][] res = new double[3][3];
         for (int r = 0; r < 3; r++) {
@@ -333,6 +438,13 @@ public class AlgebraicEllipseFitter {
         return res;
     }
 
+    /**
+     * Effectue la soustraction terme à terme de deux matrices 3x3.
+     *
+     * @param a Première matrice 3x3.
+     * @param b Deuxième matrice 3x3.
+     * @return Différence a - b (3x3).
+     */
     private double[][] subtract3x3(double[][] a, double[][] b) {
         double[][] res = new double[3][3];
         for (int r = 0; r < 3; r++) {
@@ -343,6 +455,12 @@ public class AlgebraicEllipseFitter {
         return res;
     }
 
+    /**
+     * Calcule la transposée d'une matrice 3x3.
+     *
+     * @param m Matrice 3x3.
+     * @return Matrice transposée m^T (3x3).
+     */
     private double[][] transpose3x3(double[][] m) {
         double[][] res = new double[3][3];
         for (int r = 0; r < 3; r++) {
@@ -353,6 +471,13 @@ public class AlgebraicEllipseFitter {
         return res;
     }
 
+    /**
+     * Calcule le produit vectoriel u x v de deux vecteurs 3D.
+     *
+     * @param u Premier vecteur 3D.
+     * @param v Deuxième vecteur 3D.
+     * @return Vecteur orthogonal u x v.
+     */
     private double[] crossProduct(double[] u, double[] v) {
         return new double[]{
                 u[1] * v[2] - u[2] * v[1],
@@ -361,6 +486,12 @@ public class AlgebraicEllipseFitter {
         };
     }
 
+    /**
+     * Calcule le carré de la norme euclidienne d'un vecteur 3D.
+     *
+     * @param v Vecteur 3D.
+     * @return Norme au carré ||v||^2.
+     */
     private double normSquared(double[] v) {
         return v[0] * v[0] + v[1] * v[1] + v[2] * v[2];
     }

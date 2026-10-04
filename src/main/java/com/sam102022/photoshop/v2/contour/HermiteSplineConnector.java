@@ -14,6 +14,12 @@ import java.util.List;
 public class HermiteSplineConnector {
 
     /**
+     * Initialise une nouvelle instance du connecteur spline d'Hermite.
+     */
+    public HermiteSplineConnector() {
+    }
+
+    /**
      * Génère une spline cubique d'Hermite discrétisée entre deux points et vecteurs tangents.
      * En cas de déviation excessive (boucle), bascule sur un raccordement linéaire direct.
      *
@@ -66,6 +72,15 @@ public class HermiteSplineConnector {
         return Collections.unmodifiableList(splinePoints);
     }
 
+    /**
+     * Génère un segment linéaire direct de secours sans courbure en cas de boucle aberrante.
+     *
+     * @param p0    Point d'origine.
+     * @param dx    Déplacement delta X.
+     * @param dy    Déplacement delta Y.
+     * @param steps Nombre d'échantillons le long du segment.
+     * @return Liste des points rectilignes de repli.
+     */
     private List<PixelPoint> generateLinearFallback(PixelPoint p0, double dx, double dy, int steps) {
         List<PixelPoint> fallback = new ArrayList<>(steps);
         for (int i = 0; i < steps; i++) {
@@ -115,6 +130,13 @@ public class HermiteSplineConnector {
         return Collections.unmodifiableList(currentContour);
     }
 
+    /**
+     * Vérifie si le contour longe physiquement l'anneau giratoire (au moins 12 points dans la couronne).
+     *
+     * @param contour Points du contour fermé.
+     * @param ell     Ellipse extérieure du rond-point.
+     * @return true si le contour longe le rond-point.
+     */
     private boolean bordersRoundabout(List<PixelPoint> contour, EllipseModel ell) {
         int nearCount = 0;
         for (PixelPoint p : contour) {
@@ -127,6 +149,13 @@ public class HermiteSplineConnector {
         return nearCount >= 12;
     }
 
+    /**
+     * Vérifie si le disque central de l'ellipse intersecte substantiellement le territoire (&gt;= 20%).
+     *
+     * @param ell           Ellipse extérieure du rond-point.
+     * @param territoryMask Masque du territoire.
+     * @return true si le rond-point appartient au territoire.
+     */
     private boolean intersectsTerritoryDisk(EllipseModel ell, BinaryMask territoryMask) {
         int w = territoryMask.getWidth();
         int h = territoryMask.getHeight();
@@ -150,6 +179,14 @@ public class HermiteSplineConnector {
         return (double) insideCount / totalProbes >= 0.20;
     }
 
+    /**
+     * Identifie les indices d'entrée iA et de sortie iB du contour dans la zone d'influence du rond-point.
+     *
+     * @param contour Points du contour.
+     * @param ell     Ellipse extérieure.
+     * @param zr      Rayon relatif de contact.
+     * @return Bornes de contact et longueur de plage, ou null si hors contact.
+     */
     private ContactBounds findContactBounds(List<PixelPoint> contour, EllipseModel ell, double zr) {
         int n = contour.size();
         List<Integer> contactIndices = new ArrayList<>();
@@ -190,6 +227,15 @@ public class HermiteSplineConnector {
         return new ContactBounds(iA, iB, runlen);
     }
 
+    /**
+     * Sélectionne le sens d'arc d'ellipse externe (+1 ou -1) minimisant l'empiètement sur le territoire intérieur.
+     *
+     * @param ptA           Point d'entrée de contact.
+     * @param ptB           Point de sortie de contact.
+     * @param ell           Ellipse extérieure du giratoire.
+     * @param territoryMask Masque du territoire.
+     * @return Arc sélectionné avec ses points interpolés.
+     */
     private SelectedArc selectBestExteriorArc(PixelPoint ptA, PixelPoint ptB, EllipseModel ell, BinaryMask territoryMask) {
         PixelPoint ua = ell.toUnitCircle(ptA);
         PixelPoint ub = ell.toUnitCircle(ptB);
@@ -240,6 +286,15 @@ public class HermiteSplineConnector {
         return best;
     }
 
+    /**
+     * Épisse l'arc d'ellipse dans le contour fermé en intercalant les deux splines C1 d'Hermite.
+     *
+     * @param contour Contour fermé d'origine.
+     * @param contact Bornes d'entrée/sortie.
+     * @param arc     Arc d'ellipse sélectionné.
+     * @param ell     Modèle d'ellipse.
+     * @return Nouveau contour vectoriel épissé.
+     */
     private List<PixelPoint> spliceRoundaboutArc(List<PixelPoint> contour, ContactBounds contact,
                                                  SelectedArc arc, EllipseModel ell) {
         int n = contour.size();
@@ -273,12 +328,28 @@ public class HermiteSplineConnector {
         return newContour;
     }
 
+    /**
+     * Calcule le vecteur tangent unitaire d'un tracé autour d'un indice central à un offset donné.
+     *
+     * @param contour   Points du contour fermé.
+     * @param centerIdx Indice central.
+     * @param offset    Décalage de part et d'autre (typiquement 6 px).
+     * @param n         Nombre total de points.
+     * @return Vecteur tangent unitaire normalisé.
+     */
     private PixelPoint computeUnitTangent(List<PixelPoint> contour, int centerIdx, int offset, int n) {
         PixelPoint prev = contour.get(Math.floorMod(centerIdx - offset, n));
         PixelPoint next = contour.get(Math.floorMod(centerIdx + offset, n));
         return computeTangentFromPoints(prev, next);
     }
 
+    /**
+     * Calcule le vecteur unitaire orienté depuis le point 'from' vers le point 'to'.
+     *
+     * @param from Point de départ.
+     * @param to   Point d'arrivée.
+     * @return Vecteur unitaire (dx/L, dy/L).
+     */
     private PixelPoint computeTangentFromPoints(PixelPoint from, PixelPoint to) {
         double dx = to.x() - from.x();
         double dy = to.y() - from.y();
@@ -286,6 +357,19 @@ public class HermiteSplineConnector {
         return new PixelPoint(dx / len, dy / len);
     }
 
+    /**
+     * Record interne représentant les bornes de contact du contour avec le rond-point.
+     *
+     * @param iA     Indice du point d'entrée.
+     * @param iB     Indice du point de sortie.
+     * @param runlen Nombre de points remplacés le long du contour.
+     */
     private record ContactBounds(int iA, int iB, int runlen) {}
+
+    /**
+     * Record interne représentant un arc d'ellipse sélectionné avec ses points interpolés.
+     *
+     * @param points Liste ordonnée des points le long de l'arc.
+     */
     private record SelectedArc(List<PixelPoint> points) {}
 }

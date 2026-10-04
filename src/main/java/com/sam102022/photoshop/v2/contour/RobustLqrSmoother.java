@@ -2,6 +2,7 @@ package com.sam102022.photoshop.v2.contour;
 
 import com.sam102022.photoshop.v2.geometry.PixelPoint;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
@@ -11,6 +12,12 @@ import java.util.List;
  * et départs de rues transversales comme des valeurs aberrantes (outliers).
  */
 public class RobustLqrSmoother {
+
+    /**
+     * Initialise une nouvelle instance du lisseur quadratique robuste LQR.
+     */
+    public RobustLqrSmoother() {
+    }
 
     /**
      * Lisse l'ensemble du contour fermé en partitionnant par les coins détectés.
@@ -106,6 +113,14 @@ public class RobustLqrSmoother {
         return Collections.unmodifiableList(result);
     }
 
+    /**
+     * Collecte de manière circulaire ordonnée les indices d'un sous-segment entre deux coins.
+     *
+     * @param startIdx Indice de départ.
+     * @param endIdx   Indice d'arrivée.
+     * @param n        Nombre total de points du contour fermé.
+     * @return Liste ordonnée des indices le long du contour.
+     */
     private List<Integer> collectSegmentIndices(int startIdx, int endIdx, int n) {
         List<Integer> indices = new ArrayList<>();
         int curr = startIdx;
@@ -119,12 +134,25 @@ public class RobustLqrSmoother {
         return indices;
     }
 
+    /**
+     * Résout les itérations de repondération robuste de Cauchy pour une coordonnée donnée (X ou Y).
+     *
+     * @param yX         Signal des résidus en abscisse.
+     * @param yY         Signal des résidus en ordonnée.
+     * @param g          Tableau des poids du noyau gaussien précalculé.
+     * @param k          Demi-fenêtre du noyau LQR.
+     * @param n          Longueur du segment.
+     * @param scale      Échelle du M-estimateur de Cauchy.
+     * @param iterations Nombre d'itérations.
+     * @param coord      Indice de coordonnée (0 pour X, 1 pour Y).
+     * @return Signal lissé estimé pour la coordonnée sélectionnée.
+     */
     private double[] solveLqrIterations(double[] yX, double[] yY, double[] g, int k, int n,
                                         double scale, int iterations, int coord) {
         double[] w = new double[n];
-        java.util.Arrays.fill(w, 1.0);
-        double[] fitX = java.util.Arrays.copyOf(yX, n);
-        double[] fitY = java.util.Arrays.copyOf(yY, n);
+        Arrays.fill(w, 1.0);
+        double[] fitX = Arrays.copyOf(yX, n);
+        double[] fitY = Arrays.copyOf(yY, n);
 
         for (int it = 0; it < iterations; it++) {
             double[] nextFitX = computeLqrPass(yX, w, g, k, n);
@@ -139,6 +167,16 @@ public class RobustLqrSmoother {
         return coord == 0 ? fitX : fitY;
     }
 
+    /**
+     * Calcule une passe locale de convolution polynomiale d'ordre 2 pour un signal 1D pondéré.
+     *
+     * @param y Signal d'entrée 1D.
+     * @param w Poids courants de l'estimateur de Cauchy.
+     * @param g Pondérations gaussiennes.
+     * @param k Demi-largeur de fenêtre.
+     * @param n Longueur du signal.
+     * @return Valeurs polynomiales évaluées au point central t.
+     */
     private double[] computeLqrPass(double[] y, double[] w, double[] g, int k, int n) {
         double[] fit = new double[n];
 
@@ -171,6 +209,23 @@ public class RobustLqrSmoother {
         return fit;
     }
 
+    /**
+     * Résout la composante d'ordre 0 (valeur centrale) du système linéaire 3x3 par formule explicite de Cramer.
+     *
+     * @param a00 Coefficient (0,0) de la matrice A.
+     * @param a01 Coefficient (0,1) de la matrice A.
+     * @param a02 Coefficient (0,2) de la matrice A.
+     * @param a10 Coefficient (1,0) de la matrice A.
+     * @param a11 Coefficient (1,1) de la matrice A.
+     * @param a12 Coefficient (1,2) de la matrice A.
+     * @param a20 Coefficient (2,0) de la matrice A.
+     * @param a21 Coefficient (2,1) de la matrice A.
+     * @param a22 Coefficient (2,2) de la matrice A.
+     * @param b0  Second membre ligne 0.
+     * @param b1  Second membre ligne 1.
+     * @param b2  Second membre ligne 2.
+     * @return Valeur scalaire estimée c0.
+     */
     private double solveCramerOrder0(double a00, double a01, double a02,
                                      double a10, double a11, double a12,
                                      double a20, double a21, double a22,
@@ -190,6 +245,17 @@ public class RobustLqrSmoother {
         return detA0 / detA;
     }
 
+    /**
+     * Met à jour les poids robustes w(t) selon la fonction de perte de Cauchy/Tukey.
+     *
+     * @param yX    Signal d'origine X.
+     * @param yY    Signal d'origine Y.
+     * @param fitX  Signal ajusté X.
+     * @param fitY  Signal ajusté Y.
+     * @param w     Tableau des poids à mettre à jour in-place.
+     * @param scale Échelle de normalisation du résidu.
+     * @param n     Nombre de points.
+     */
     private void updateRobustWeights(double[] yX, double[] yY, double[] fitX, double[] fitY,
                                      double[] w, double scale, int n) {
         for (int t = 0; t < n; t++) {

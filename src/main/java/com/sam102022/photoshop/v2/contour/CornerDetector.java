@@ -13,6 +13,12 @@ import java.util.List;
 public class CornerDetector {
 
     /**
+     * Initialise une nouvelle instance du détecteur d'angles vifs.
+     */
+    public CornerDetector() {
+    }
+
+    /**
      * Détecte les indices des coins préservés le long d'un contour fermé.
      *
      * @param contour          Liste ordonnée des points du contour fermé rééchantillonné.
@@ -40,6 +46,13 @@ public class CornerDetector {
         return Collections.unmodifiableList(corners);
     }
 
+    /**
+     * Applique un pré-filtrage gaussien périodique 1D pour éliminer les micro-bruits de numérisation.
+     *
+     * @param contour Points du contour fermé.
+     * @param sigma   Écart-type de la gaussienne en pixels.
+     * @return Liste lissée des points périodiques.
+     */
     private List<PixelPoint> applyPeriodicGaussianSmoothing(List<PixelPoint> contour, double sigma) {
         int n = contour.size();
         int k = Math.max(1, (int) Math.floor(4.0 * sigma));
@@ -68,6 +81,13 @@ public class CornerDetector {
         return smoothed;
     }
 
+    /**
+     * Calcule la déviation angulaire en degrés en chaque point par rapport aux sécantes à +/- L pixels.
+     *
+     * @param smoothed Points du contour pré-filtré.
+     * @param windowL  Demi-largeur de fenêtre L.
+     * @return Tableau des déviations angulaires en degrés [0..180].
+     */
     private double[] computeAngularDeviations(List<PixelPoint> smoothed, int windowL) {
         int n = smoothed.size();
         double[] angles = new double[n];
@@ -90,6 +110,15 @@ public class CornerDetector {
         return angles;
     }
 
+    /**
+     * Vérifie si l'angle en un indice donné constitue un maximum local strict sur la fenêtre [-windowL, +windowL].
+     *
+     * @param angles    Tableau des angles.
+     * @param centerIdx Indice du sommet candidat.
+     * @param windowL   Demi-largeur de recherche.
+     * @param n         Nombre total de sommets.
+     * @return true si le sommet est un pic strict, false sinon.
+     */
     private boolean isStrictLocalMaximum(double[] angles, int centerIdx, int windowL, int n) {
         double centerVal = angles[centerIdx];
         for (int offset = -windowL; offset <= windowL; offset++) {
