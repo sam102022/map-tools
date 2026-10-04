@@ -72,7 +72,7 @@ SPRINT 7 (Rendu Sub-Pixel Supersampling SS=4 & CLI V2)
 | **Sprint 2** | Détection Colorimétrique des Routes & Fermeture Topologique | ✅ Validé | `v2.road` | [sprint-2-detection-routes.md](sprints_v2/sprint-2-detection-routes.md) |
 | **Sprint 3** | Segmentation en Cellules (4-connexité) & `CellGraph` | ✅ Validé | `v2.cell` | [sprint-3-cellules-cellgraph.md](sprints_v2/sprint-3-cellules-cellgraph.md) |
 | **Sprint 4** | Moteur de Vote Topologique & Résolution des Parcelles | ⏳ À venir | `v2.vote` | [sprint-4-vote-topologique.md](sprints_v2/sprint-4-vote-topologique.md) |
-| **Sprint 5** | Reconstruction des Frontières Routières & Expansion Géodésique | ⏳ À venir | `v2.expansion` | [sprint-5-expansion-geodesique.md](sprints_v2/sprint-5-expansion-geodesique.md) |
+| **Sprint 5** | Reconstruction des Frontières Routières & Expansion Géodésique | ⏳ Spécifié (Prêt) | `v2.expansion` | [sprint-5-expansion-geodesique.md](sprints_v2/sprint-5-expansion-geodesique.md) |
 | **Sprint 6** | Géométrie Sub-Pixel, Lissage Robuste LQR & Ronds-points | ⏳ À venir | `v2.contour` | [sprint-6-lissage-subpixel-ronds-points.md](sprints_v2/sprint-6-lissage-subpixel-ronds-points.md) |
 | **Sprint 7** | Rendu Sub-Pixel Supersampling (SS=4), Export RGBA & CLI V2 | ⏳ À venir | `v2.render` / `v2.pipeline` / `cli` | [sprint-7-rendu-supersampling-cli.md](sprints_v2/sprint-7-rendu-supersampling-cli.md) |
 

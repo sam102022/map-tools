@@ -32,13 +32,30 @@ Le projet est régi par les décisions d'architecture (ADR) consignées dans [`d
 | **Sprint 2** | Détection Colorimétrique des Routes & Fermeture Topologique | 03/10/2026 | ✅ Validé | `RoadMask`, `RoadDetector`, `RoadDetectorStyle`, `RoadMaskCleaner`, `RoadDetectorOsm` |
 | **Sprint 3** | Segmentation en Cellules (4-connexité) & `CellGraph` | 04/10/2026 | ✅ Validé | `CropWindow`, `BoundingBoxCropper`, `Cell`, `CellLabelMap`, `CellLabeler`, `RoadInterface`, `RoadInterfaceExtractor`, `CellGraph` |
 | **Sprint 4** | Moteur de Vote Topologique & Résolution des Parcelles | Cadré (04/10/2026) | ⏳ Prêt pour dév | `CellState`, `CellSelectionPolicy`, `CellDecision`, `CellSelection`, `CellCoverageCalculator`, `CellClassifier`, `PartialCellResolver`, `TopologicalVoteEngine` |
-| **Sprint 5** | Reconstruction des Frontières Routières & Expansion Géodésique | Planifié | ⏳ À venir | `BoundingBoxCropper`, `BoundaryRoadExtractor`, `RoadDistanceTransform`, `GeodesicRoadExpander`, `ResidualHoleResolver` |
+| **Sprint 5** | Reconstruction des Frontières Routières & Expansion Géodésique | Cadré (04/10/2026) | ⏳ Prêt pour dév | `ExpansionConfig`, `DistanceMap`, `ConsolidatedMask`, `EuclideanDistanceTransform`, `LocalMaxFilter`, `BoundedGeodesicExpander`, `MorphologicalConsolidator`, `ResidualHoleResolver`, `BoundaryRoadPartitioner`, `RoadBoundaryConsolidator` |
 | **Sprint 6** | Géométrie Sub-Pixel, Lissage Robuste LQR & Ronds-points | Cadré (04/10/2026) | ⏳ Spécifié | `SubpixelContourExtractor`, `CornerDetector`, `RobustLqrSmoother`, `CornerPreservationBlender`, `AlgebraicEllipseFitter`, `RoundaboutDetector`, `HermiteSplineConnector`, `ContourSmoothingEngine` |
 | **Sprint 7** | Rendu Sub-Pixel Supersampling (SS=4), Export RGBA & CLI V2 | Cadré (04/10/2026) | ⏳ Spécifié | `V2Config`, `SupersampleRenderer`, `ImageClipper`, `RenderResult`, `V2Pipeline`, `V2CliRunner` |
 
 ---
 
 ## 📝 3. Entrées Journalières Datées
+
+### Dimanche 04 octobre 2026 : Cadrage Formel (Design Spec & Plan TDD) du Sprint 5 V2 (Reconstruction des Frontières Routières & Expansion Géodésique)
+
+*   **Audit Préalable et Résolution des 6 Faiblesses Documentaires :**
+    *   **Levée de l'ambiguïté architecturale (`BoundaryRoadExtractor` vs Expansion globale) :** Clarification du rôle de la borne géodésique $d_G \le 2 \times hw_{\max} + \varepsilon$ ($\varepsilon = 4.0\text{ px}$) qui arrête naturellement la propagation Dijkstra au bord extérieur de la chaussée et élimine tout risque de fuite dans les rues perpendiculaires extérieures, sans nécessiter de découpage topologique complexe préalable des carrefours.
+    *   **Spécification d'algorithmes 100% Java standard en $O(N)$ (ADR-001) :**
+        *   Remplacement de l'appel scipy `distance_transform_edt` par l'algorithme exact et linéaire en deux passes 1D séparables de **Meijster, Roerdink & Hesselink (2000)** (~40 ms pour 2,68 Mpx) ;
+        *   Remplacement du filtre 2D lourd par un filtre maximum local séparable horizontal/vertical en $O(N)$ basé sur la **file monotone 1D de Lemire** (~35 ms pour une fenêtre $41 \times 41$).
+    *   **Sanctuarisation des cellules intérieures ($T$) :** Correction de la formule morphologique pour empêcher que l'ouverture circulaire par disque ($\rho = 5\text{ px}$) n'érode les angles authentiques des parcelles intérieures : formulation stricte $M_c = T \cup \text{open}(T \cup ext, \text{disk}(5))$.
+    *   **Cohérence du repère spatial (ROI) et contrat I/O :** Intégration de `CropWindow` dans le modèle immuable de sortie `ConsolidatedMask` avec méthodes `offsetX()` et `offsetY()`, alignant la chaîne avec Sprint 3, Sprint 4 et Sprint 6.
+    *   **Spécification du mode `ZONE` :** Formalisation de `BoundaryRoadPartitioner` pour le partage équitable de la voirie mitoyenne par Voronoi géodésique à double front (ligne médiane neutre), garantissant l'invariance stricte $Z_1 \cap Z_2 = \emptyset$.
+    *   **Comblement sélectif des îlots résiduels :** Algorithme par inondation BFS inverse depuis le périmètre extérieur marquant le fond infini, puis identification des cavités et comblement sélectif des trous $\le 15\,000\text{ px}$.
+    *   **Métriques de validation quantifiées sur CA01 :** Surface consolidée cible $M_c$ calibrée sur l'étalon Python à **1 215 383 px** ($\pm 0{,}5\%$, $\text{IoU} \ge 99{,}5\%$), budget temps total $\le 1200\text{ ms}$ (seuil max $1500\text{ ms}$).
+*   **Documents de Référence Créés et Mis à Niveau (ADR-006) :**
+    *   Spécification technique détaillée : [`docs/superpowers/specs/2026-10-04-v2-sprint-5-geodesic-expansion-design.md`](docs/superpowers/specs/2026-10-04-v2-sprint-5-geodesic-expansion-design.md) ;
+    *   Plan d'implémentation opérationnel TDD (10 tâches découpées) : [`docs/superpowers/plans/2026-10-04-v2-sprint-5-geodesic-expansion.md`](docs/superpowers/plans/2026-10-04-v2-sprint-5-geodesic-expansion.md) ;
+    *   Fiche de sprint V2 mise à jour : [`docs/sprints_v2/sprint-5-expansion-geodesique.md`](docs/sprints_v2/sprint-5-expansion-geodesique.md).
 
 ### Dimanche 04 octobre 2026 : Cadrage Formel & Spécification Complète du Sprint 7 V2 (Supersampling SS=4, Export RGBA & CLI V2)
 
