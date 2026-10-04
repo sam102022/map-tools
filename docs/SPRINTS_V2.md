@@ -52,8 +52,10 @@ SPRINT 6 (Géométrie Sub-Pixel, Lissage Robuste LQR & Ronds-points)
         │
 SPRINT 7 (Rendu Sub-Pixel Supersampling SS=4 & CLI V2)
         │
+        ├── V2Config (Configuration immuable des hyperparamètres)
         ├── SupersampleRenderer (Rastérisation vectorielle 4x + box filter -> CoverageMask)
         ├── ImageClipper (Assemblage RGBA 32-bit clipped, mask, overlay)
+        ├── V2Pipeline (Orchestrateur global Sprints 1 -> 7)
         └── V2CliRunner (CLI --v2 avec hyperparamètres documentés)
         │
         ▼
@@ -72,7 +74,7 @@ SPRINT 7 (Rendu Sub-Pixel Supersampling SS=4 & CLI V2)
 | **Sprint 4** | Moteur de Vote Topologique & Résolution des Parcelles | ⏳ À venir | `v2.vote` | [sprint-4-vote-topologique.md](sprints_v2/sprint-4-vote-topologique.md) |
 | **Sprint 5** | Reconstruction des Frontières Routières & Expansion Géodésique | ⏳ À venir | `v2.expansion` | [sprint-5-expansion-geodesique.md](sprints_v2/sprint-5-expansion-geodesique.md) |
 | **Sprint 6** | Géométrie Sub-Pixel, Lissage Robuste LQR & Ronds-points | ⏳ À venir | `v2.contour` | [sprint-6-lissage-subpixel-ronds-points.md](sprints_v2/sprint-6-lissage-subpixel-ronds-points.md) |
-| **Sprint 7** | Rendu Sub-Pixel Supersampling (SS=4), Export RGBA & CLI V2 | ⏳ À venir | `v2.render` / `cli` | [sprint-7-rendu-supersampling-cli.md](sprints_v2/sprint-7-rendu-supersampling-cli.md) |
+| **Sprint 7** | Rendu Sub-Pixel Supersampling (SS=4), Export RGBA & CLI V2 | ⏳ À venir | `v2.render` / `v2.pipeline` / `cli` | [sprint-7-rendu-supersampling-cli.md](sprints_v2/sprint-7-rendu-supersampling-cli.md) |
 
 ---
 
@@ -84,16 +86,16 @@ Chaque sprint s'appuie sur des contrats d'entrée/sortie immuables sous forme de
   Représente le polygone d'intention $P[x, y] \in \{0, 1\}$.
 * **Sprint 2 ➔ Sprint 3 : `RoadMask`**
   Encapsule les masques `raw` (brut) et `closed` (fermeture topologique minimale 1 px).
-* **Sprint 3 ➔ Sprint 4 : `CellGraph`**
-  Modélise les cellules urbaines et les interfaces routières locales les reliant.
+* **Sprint 3 ➔ Sprint 4 : `CellLabelMap` & `CellGraph`**
+  Modélise les cellules urbaines, la matrice de labels et les interfaces routières locales les reliant.
 * **Sprint 4 ➔ Sprint 5 : `CellSelection`**
-  Synthétise les identifiants de cellules retenues (`inside`), rejetées (`outside`) et mixtes (`partial`).
+  Synthétise les identifiants de cellules retenues (`inside`), rejetées (`outside`) et mixtes (`partial`), ainsi que le masque d'amorçage matriciel local $T$ (`retainedMask`).
 * **Sprint 5 ➔ Sprint 6 : `ConsolidatedMask`**
-  Masque binaire étanche consolidé sur la boîte englobante locale après expansion géodésique.
-* **Sprint 6 ➔ Sprint 7 : `SmoothVectorContour`**
-  Contour vectoriel continu sub-pixel lissé par régression quadratique locale et ellipses d'îlots.
+  Masque binaire étanche consolidé sur la boîte englobante locale après expansion géodésique (fourni avec `RoadMask`, `CellLabelMap` et `CropWindow` pour la modélisation des ronds-points).
+* **Sprint 6 ➔ Sprint 7 : `SmoothVectorContour` & `CropWindow`**
+  Contour vectoriel continu sub-pixel lissé par régression quadratique locale et ellipses d'îlots, rattaché à son repère ROI.
 * **Sprint 7 : `RenderResult`**
-  Ensemble des images de production (`clipped`, `mask`, `overlay`).
+  Ensemble des images de production (`clipped`, `mask`, `overlay`) et du `CoverageMask` continu.
 
 ---
 
@@ -123,5 +125,5 @@ Le cas d'usage réel `Territoire CA01` sert de banc d'essai étalon commun à to
 | **S3** | `RoadMask` | `CellGraph` | Cellules 4-connexes étanches + `RoadInterfaces` associées *(Validé : 130 cellules, 269 interfaces)* |
 | **S4** | `PolygonMask` + `CellGraph` | `CellSelection` | Vote déterministe (21 cellules pleines / 6 partielles) |
 | **S5** | `CellGraph` + `CellSelection` | `ConsolidatedMask` | Reconstruction des frontières routières (EDT + MCP borné) + îlots résiduels |
-| **S6** | `ConsolidatedMask` | `SmoothVectorContour` | Contour sub-pixel, LQR robuste sans rabotage, ronds-points par ellipses & Hermite |
+| **S6** | `ConsolidatedMask` (+ `RoadMask`, `CellLabelMap`) | `SmoothVectorContour` | Contour sub-pixel, LQR robuste sans rabotage, ronds-points par ellipses & Hermite (1 RP sur CA01, Hausdorff <= 2.5px) |
 | **S7** | `SmoothVectorContour` + Image source | `RenderResult` | Supersampling vectoriel $\times 4$, découpe RGBA, IoU $\ge 0.99$ vs python V5 |

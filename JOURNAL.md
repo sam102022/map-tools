@@ -31,14 +31,55 @@ Le projet est régi par les décisions d'architecture (ADR) consignées dans [`d
 | **Sprint 1** | Socle Géométrique, Projection Web Mercator & Rasterisation | 02/10/2026 | ✅ Validé | `GeoCoordinate`, `PixelPoint`, `MapContext`, `TerritoryGeometry`, `WebMercatorProjection`, `JsonTerritoryLoader`, `PolygonRasterizer`, `PolygonMask` |
 | **Sprint 2** | Détection Colorimétrique des Routes & Fermeture Topologique | 03/10/2026 | ✅ Validé | `RoadMask`, `RoadDetector`, `RoadDetectorStyle`, `RoadMaskCleaner`, `RoadDetectorOsm` |
 | **Sprint 3** | Segmentation en Cellules (4-connexité) & `CellGraph` | 04/10/2026 | ✅ Validé | `CropWindow`, `BoundingBoxCropper`, `Cell`, `CellLabelMap`, `CellLabeler`, `RoadInterface`, `RoadInterfaceExtractor`, `CellGraph` |
-| **Sprint 4** | Moteur de Vote Topologique & Résolution des Parcelles | Planifié | ⏳ À venir | `CellCoverageCalculator`, `CellClassifier`, `PartialCellResolver`, `CellSelection` |
+| **Sprint 4** | Moteur de Vote Topologique & Résolution des Parcelles | Cadré (04/10/2026) | ⏳ Prêt pour dév | `CellState`, `CellSelectionPolicy`, `CellDecision`, `CellSelection`, `CellCoverageCalculator`, `CellClassifier`, `PartialCellResolver`, `TopologicalVoteEngine` |
 | **Sprint 5** | Reconstruction des Frontières Routières & Expansion Géodésique | Planifié | ⏳ À venir | `BoundingBoxCropper`, `BoundaryRoadExtractor`, `RoadDistanceTransform`, `GeodesicRoadExpander`, `ResidualHoleResolver` |
-| **Sprint 6** | Géométrie Sub-Pixel, Lissage Robuste LQR & Ronds-points | Planifié | ⏳ À venir | `SubpixelContourExtractor`, `CornerDetector`, `RobustLqrSmoother`, `RoundaboutDetector`, `HermiteSplineConnector` |
-| **Sprint 7** | Rendu Sub-Pixel Supersampling (SS=4), Export RGBA & CLI V2 | Planifié | ⏳ À venir | `SupersampleRenderer`, `ImageClipper`, `V2CliRunner` |
+| **Sprint 6** | Géométrie Sub-Pixel, Lissage Robuste LQR & Ronds-points | Cadré (04/10/2026) | ⏳ Spécifié | `SubpixelContourExtractor`, `CornerDetector`, `RobustLqrSmoother`, `CornerPreservationBlender`, `AlgebraicEllipseFitter`, `RoundaboutDetector`, `HermiteSplineConnector`, `ContourSmoothingEngine` |
+| **Sprint 7** | Rendu Sub-Pixel Supersampling (SS=4), Export RGBA & CLI V2 | Cadré (04/10/2026) | ⏳ Spécifié | `V2Config`, `SupersampleRenderer`, `ImageClipper`, `RenderResult`, `V2Pipeline`, `V2CliRunner` |
 
 ---
 
 ## 📝 3. Entrées Journalières Datées
+
+### Dimanche 04 octobre 2026 : Cadrage Formel & Spécification Complète du Sprint 7 V2 (Supersampling SS=4, Export RGBA & CLI V2)
+
+*   **Audit et Résolution des Zones d'Ombre Initiales :**
+    *   **Résolution du repère spatial (ROI vs Pleine image) :** Clarification du calcul de rastérisation vectorielle sub-pixel opéré exclusivement sur la boîte englobante locale `CropWindow` $\times SS$ (évitant une empreinte mémoire démesurée de ~130 Mo à l'échelle globale) avec correction de décalage demi-pixel $+0.5\text{ px}$, avant réinsertion dans le repère global $W \times H$.
+    *   **Conformité stricte au modèle `CoverageMask` (ADR-002) :** Abandon de tout flou matriciel artificiel au profit du calcul surfacique exact par moyenne de boîte (*box filter*) sur les 16 sous-pixels, produisant un `CoverageMask` continu $[0..255]$ et garantissant la composition alpha normalisée.
+    *   **Formalisation des 3 livrables graphiques de production :** Spécification exacte de `clipped.png` (ARGB 32-bit), `mask.png` (8-bit niveaux de gris natif `TYPE_BYTE_GRAY`) et `overlay.png` (contrôle diagnostic par superposition du contour frontière en rouge vif `#FF0000`).
+    *   **Conception architecturale SRP (ADR-008) & Immutabilité (ADR-004) :**
+        *   Introduction du record de configuration immuable `V2Config` regroupant les 13 hyperparamètres calibrés sur l'étalon Python V5 ;
+        *   Introduction de l'orchestrateur autonome `V2Pipeline` enchaînant les Sprints 1 à 7 de manière découplée, réutilisable par la CLI et la future GUI Swing (ADR-003) ;
+        *   Cloisonnement strict entre `SupersampleRenderer` (calcul géométrique de couverture) et `ImageClipper` (assemblage et colorimétrie).
+    *   **Spécification d'ingénierie CLI :** Tableau exhaustif de l'ensemble des arguments E/S (`--map`, `--json`, `--mode`, `--output`, `--mask-out`, `--overlay-out`, `--osm-roads`, `--debug`) et des hyperparamètres, protocole d'erreurs et codes de sortie (0, 1, 2), journalisation hiérarchisée en français (ADR-009).
+    *   **Mise à niveau documentaire :** Rédaction intégrale de [`docs/sprints_v2/sprint-7-rendu-supersampling-cli.md`](docs/sprints_v2/sprint-7-rendu-supersampling-cli.md) et alignement du schéma directeur [`docs/SPRINTS_V2.md`](docs/SPRINTS_V2.md).
+    *   **Critères d'acceptation stricts sur cas pivot CA01 :** Temps d'exécution total $\le 5{,}0\text{ s}$, concordance $\text{IoU} \ge 0{,}99$ par rapport à l'étalon `CA01_mask_v5.png`, écart de surface $< 0{,}5\%$.
+
+### Dimanche 04 octobre 2026 : Cadrage Formel & Spécification Technique Complète du Sprint 6 V2 (Géométrie Sub-Pixel & Ronds-points)
+
+*   **Audit et Identification des Faiblesses Initiales :**
+    *   Mise en évidence d'un blocage d'interface I/O : la détection des ronds-points (`RoundaboutDetector`) nécessite impérativement `RoadMask` (Sprint 2) pour le sondage radial (240 rayons) et `CellLabelMap` (Sprint 3) pour l'isolation des îlots compacts, absents du contrat d'entrée initial.
+    *   Absence de spécification mathématique en Java pur standard (ADR-001) pour remplacer l'appel externe `skimage.measure.EllipseModel`.
+    *   Formulation matricielle $3 \times 3$ du LQR sous-spécifiée et critères de validation purement qualitatifs.
+*   **Conception Formelle Exhaustive (ADR-006 & ADR-001) :**
+    *   Rédaction de la spécification technique détaillée : [`docs/superpowers/specs/2026-10-04-v2-sprint-6-subpixel-smoothing-roundabouts-design.md`](docs/superpowers/specs/2026-10-04-v2-sprint-6-subpixel-smoothing-roundabouts-design.md).
+    *   Spécification complète du solveur d'ellipse direct en **100% Java standard sans lib externe** via l'algorithme direct de **Halir & Flusser (1998)** aux moindres carrés sous contrainte $4AC - B^2 = 1$ avec réduction $3 \times 3$ et calcul des valeurs propres.
+    *   Formalisation matricielle de la Régression Quadratique Locale Robuste (LQR) avec résolution explicite par déterminants de Cramer et M-estimateur de Cauchy/Tukey (6 itérations).
+    *   Mise à jour et alignement complet de la fiche de cadrage : [`docs/sprints_v2/sprint-6-lissage-subpixel-ronds-points.md`](docs/sprints_v2/sprint-6-lissage-subpixel-ronds-points.md).
+    *   Mise à jour du schéma directeur dans [`docs/SPRINTS_V2.md`](docs/SPRINTS_V2.md).
+    *   Établissement de critères quantitatifs d'acceptation stricts sur le cas pivot CA01 : détection de 10 à 16 coins vifs, substitution de l'arc externe sur exactement 1 rond-point (boulevard sud-est), distance de Hausdorff $\le 2.5\text{ px}$ par rapport au contour étalon Python `contour_smooth.npy`.
+
+### Dimanche 04 octobre 2026 : Cadrage Formel (Design Spec & Plan TDD) du Sprint 4 V2 (Vote Topologique)
+
+*   **Cadrage et Conception formelle préalable (ADR-006) :**
+    *   Rédaction de la spécification technique exhaustive : [`docs/superpowers/specs/2026-10-04-v2-sprint-4-topological-voting-design.md`](docs/superpowers/specs/2026-10-04-v2-sprint-4-topological-voting-design.md).
+    *   Rédaction du plan d'implémentation opérationnel TDD : [`docs/superpowers/plans/2026-10-04-v2-sprint-4-topological-voting.md`](docs/superpowers/plans/2026-10-04-v2-sprint-4-topological-voting.md).
+    *   Mise à jour et alignement complet de la fiche de sprint : [`docs/sprints_v2/sprint-4-vote-topologique.md`](docs/sprints_v2/sprint-4-vote-topologique.md).
+    *   Résolution des 4 zones d'ombre architecturales :
+        1. **Contrat d'entrée I/O :** Ajout explicite de la matrice d'étiquettes `CellLabelMap` indispensable au calcul pixel par pixel des intersections.
+        2. **Repère local ROI :** Découpe préalable du polygone d'intention $P_c = P[sl]$ sur la `CropWindow` ($1505 \times 1783\text{ px}$) assurant une concordance spatiale directe.
+        3. **Masque d'amorçage $T$ (`retainedMask`) :** Fourniture directe dans `CellSelection` du masque binaire prêt pour la propagation géodésique du Sprint 5.
+        4. **Gestion déterministe des cellules ouvertes :** Confirmation de la règle uniforme d'intersection binaire stricte $C \cap P_c$ sans heuristique empirique superflue.
+    *   Définition des métriques cibles étalons sur CA01 : 130 cellules $\rightarrow$ **21 INSIDE**, **6 PARTIAL**, **103 OUTSIDE**.
 
 ### Dimanche 04 octobre 2026 : Cadrage (Spec & Plan) et Finalisation Intégrale du Sprint 3 V2
 
@@ -55,15 +96,15 @@ Le projet est régi par les décisions d'architecture (ADR) consignées dans [`d
     *   **Contrats de domaine immuables (`CropWindow`, `CellLabelMap`, `Cell`, `RoadInterface`, `CellLabelingResult`, `CellGraph`) :** Modèles de données avec validation défensive des préconditions et méthodes d'assistance à la navigation d'adjacence.
     *   **Découpeur de boîte englobante `BoundingBoxCropper` :** Calcul de la fenêtre de recadrage avec marge de sécurité et découpe matricielle de `BinaryMask`.
     *   **Étiqueteur en 4-connexité stricte `CellLabeler` :** Algorithme Two-Pass avec structure d'équivalences *Union-Find* (compression de chemin et fusion par rang), éliminant tout pont diagonal à travers les carrefours.
-    *   **Extracteur d'interfaces routières `RoadInterfaceExtractor` :** Détection d'adjacence par contact direct et propagation Voronoi BFS dans la chaussée, construction automatique du `CellGraph`.
-    *   **Documentation Javadoc exhaustive en français (ADR-014) :** Intégration systématique des commentaires Javadoc sur toutes les classes et méthodes.
+    *   **Extracteur d'interfaces routières `RoadInterfaceExtractor` optimisé :** Détection d'adjacence directe zéro-allocation (tampon local `int[4]`), propagation Voronoi BFS dans la chaussée, déduplication sans surcoût mémoire et construction automatique du `CellGraph`.
+    *   **Documentation Javadoc exhaustive en français (ADR-014) :** Intégration systématique des commentaires Javadoc normalisés (`@param`, `@return`, `@throws`) sur l'intégralité des classes, records, interfaces, constructeurs et méthodes (publiques et privées), y compris les classes de tests unitaires.
 
 *   **Validation & Métriques :**
     *   **Test d'intégration pivot `Sprint3IntegrationTest` sur Territoire CA01 :**
         *   Nombre de cellules détectées : **exactement 130 cellules** (concordance déterministe à 100% avec l'étalon Python `ndi.label(~Rc)`) ;
         *   Nombre d'interfaces routières identifiées : **269 interfaces** (concordance exacte avec l'analyse d'adjacence Voronoi Python) ;
-        *   Temps d'exécution du pipeline complet : **~800 ms** (critère $\le 1000\text{ ms}$).
-    *   **Suite de tests V2 :** 51/51 tests réussis (100% de succès sur l'ensemble des packages V2 geometry, road et cell).
+        *   Temps d'exécution du pipeline algorithmique : **~500 ms** (critère $\le 1000\text{ ms}$, test stable même sur JVM froide).
+    *   **Suite de tests V2 :** 54/54 tests réussis (100% de succès sur l'ensemble des packages V2 geometry, road, cell et vote).
 
 ### Samedi 03 octobre 2026 : Implémentation et Validation Complète du Sprint 2 V2
 
@@ -102,8 +143,8 @@ Le projet est régi par les décisions d'architecture (ADR) consignées dans [`d
 ## 🔬 4. État Opérationnel à Date
 
 *   **Suite de tests V2 (`com.sam102022.photoshop.v2.**.*Test`) :**
-    *   **Nombre de tests exécutés :** 51
-    *   **Succès :** 51 (100%)
+    *   **Nombre de tests exécutés :** 54
+    *   **Succès :** 54 (100%)
     *   **Échecs :** 0
     *   **Erreurs :** 0
-*   **Temps d'exécution total de la suite V2 :** 4.3 s.
+*   **Temps d'exécution total de la suite V2 :** 4.9 s.
