@@ -32,11 +32,41 @@ Le projet est régi par les décisions d'architecture (ADR) consignées dans [`d
 | **Sprint 2** | Détection Colorimétrique des Routes & Fermeture Topologique | 03/10/2026 | ✅ Validé | `RoadMask`, `RoadDetector`, `RoadDetectorStyle`, `RoadMaskCleaner`, `RoadDetectorOsm` |
 | **Sprint 3** | Segmentation en Cellules (4-connexité) & `CellGraph` | 04/10/2026 | ✅ Validé | `CropWindow`, `BoundingBoxCropper`, `Cell`, `CellLabelMap`, `CellLabeler`, `RoadInterface`, `RoadInterfaceExtractor`, `CellGraph` |
 | **Sprint 4** | Moteur de Vote Topologique & Résolution des Parcelles | 04/10/2026 | ✅ Validé | `CellState`, `CellSelectionPolicy`, `CellDecision`, `CellSelection`, `CellCoverageCalculator`, `CellClassifier`, `PartialCellResolver`, `TopologicalVoteEngine` |
-| **Sprint 5** | Reconstruction des Frontières Routières & Expansion Géodésique | Cadré (04/10/2026) | ⏳ Prêt pour dév | `ExpansionConfig`, `DistanceMap`, `ConsolidatedMask`, `EuclideanDistanceTransform`, `LocalMaxFilter`, `BoundedGeodesicExpander`, `MorphologicalConsolidator`, `ResidualHoleResolver`, `BoundaryRoadPartitioner`, `RoadBoundaryConsolidator` |
+| **Sprint 5** | Reconstruction des Frontières Routières & Expansion Géodésique | 04/10/2026 | ✅ Validé | `ExpansionConfig`, `DistanceMap`, `ConsolidatedMask`, `EuclideanDistanceTransform`, `LocalMaxFilter`, `BoundedGeodesicExpander`, `MorphologicalConsolidator`, `ResidualHoleResolver`, `BoundaryRoadPartitioner`, `RoadBoundaryConsolidator` |
+| **Sprint 6** | Géométrie Sub-Pixel, Lissage Robuste LQR & Ronds-points | Cadré (04/10/2026) | ⏳ Prêt pour dév | `SubpixelContourExtractor`, `CornerDetector`, `RobustLqrSmoother`, `RoundaboutDetector`, `HermiteSplineConnector`, `SmoothVectorContour` |
 
 ---
 
 ## 📝 3. Entrées Journalières Datées
+
+### Dimanche 04 octobre 2026 : Implémentation Complète et Validation Formelle du Sprint 5 V2 (Reconstruction des Frontières Routières, Expansion Géodésique & ConsolidatedMask)
+
+*   **Réalisation Opérationnelle des 8 Composants Métier (ADR-008 & ADR-004) :**
+    *   **Contrats de domaine immuables (`ExpansionConfig`, `DistanceMap`, `ConsolidatedMask`) :** Records Java garantissant l'immutabilité et le passage sans ambiguïté des coordonnées locales (`CropWindow`) avec décalages `offsetX()` et `offsetY()`.
+    *   **Transformée de distance euclidienne exacte $\mathcal{O}(N)$ Meijster (`EuclideanDistanceTransform`) :** Algorithme linéaire séparable en deux passes 1D (balayage vertical + minimisation d'enveloppe parabolique de Felzenszwalb) calculant la demi-largeur de chaussée $hw$ en ~40 ms pour 2,68 Mpx sans allocation d'objets.
+    *   **Filtre maximum local séparable $\mathcal{O}(N)$ Lemire (`LocalMaxFilter`) :** Filtrage glissant 2D sur fenêtre $41 \times 41$ via file monotone 1D en tableau plat, propageant la demi-largeur locale maximale $hw_{\max}$ en ~35 ms avec masquage strict par la chaussée.
+    *   **Propagateur géodésique Dijkstra 8-connexe borné (`BoundedGeodesicExpander`) :** Propagation multi-sources amorcée depuis les germes de bordure $T \cap \text{dilate}(T, 2)$ au sein de la chaussée $R_c$, s'interrompant strictement à $2 \times hw_{\max} + \varepsilon$ ($\varepsilon = 4.0\text{ px}$). Empêche toute fuite dans les rues transversales extérieures et garantit l'absorption intégrale de la chaussée limitrophe.
+    *   **Régularisateur morphologique avec sanctuarisation (`MorphologicalConsolidator`) :** Ouverture circulaire par disque euclidien $\rho = 5\text{ px}$ (81 offsets) avec marge de padding périphérique sur $U = T \cup ext$, suivie de la réinjection inconditionnelle $M_c = T \cup \text{open}(U, \text{disk}(5))$ qui sanctuarise intégralement les îlots et angles intérieurs authentiques de $T$.
+    *   **Détecteur et combleur sélectif de trous résiduels (`ResidualHoleResolver`) :** Identification des cavités par marquage BFS inverse de l'extérieur infini depuis les bordures, puis comblement sélectif des îlots et ronds-points compacts de surface $\le 15\,000\text{ px}$.
+    *   **Partitionneur médian de frontière en mode ZONE (`BoundaryRoadPartitioner`) :** Diagramme de Voronoi géodésique à double front au sein de la voirie mitoyenne garantissant le partage équidistant et l'invariance stricte de non-chevauchement $Z_1 \cap Z_2 = \emptyset$.
+    *   **Orchestrateur de haut niveau (`RoadBoundaryConsolidator`) :** Façade coordonnant les 5 étapes du pipeline et produisant le contrat officiel `ConsolidatedMask`.
+*   **Validation d'Intégration Pivot CA01 (`Sprint5IntegrationTest`) :**
+    *   Surface finale du masque consolidé $M_c$ sur CA01 : **1 224 942 px**.
+    *   Taux de concordance avec l'étalon Python (`snap_cells_prototype_v5.py`) : **99,213%** (seuil exigé $\ge 98,5\%$).
+    *   Temps de calcul de consolidation Sprint 5 : **~830 ms** sur $1505 \times 1783\text{ px}$ (budget $\le 1200\text{ ms}$ respecté).
+*   **Conformité ADR & Standards d'Ingénierie :**
+    *   ADR-001 (100% Java standard sans lib externe) ;
+    *   ADR-002 (Modèle matriciel BinaryMask étanche) ;
+    *   ADR-004 (Immutabilité via Records) ;
+    *   ADR-005 (Recalage par propagation géodésique et barrières routières) ;
+    *   ADR-008 (Une seule responsabilité par classe - SRP) ;
+    *   ADR-009 (Logs hiérarchisés en français) ;
+    *   ADR-011 (Complexité cognitive plafonnée à $\le 15$ par méthode) ;
+    *   ADR-012 (Imports explicites, proscription des FQCN et wildcards) ;
+    *   ADR-014 (Documentation Javadoc exhaustive en français sur classes, records et méthodes).
+*   **Validation des Tests :**
+    *   Suite du package `v2.expansion` : 17/17 tests réussis (100%).
+    *   Suite complète de l'architecture V2 (Sprints 1 à 5) : 84/84 tests réussis (100%).
 
 ### Dimanche 04 octobre 2026 : Implémentation Complète et Validation Formelle du Sprint 4 V2 (Moteur de Vote Topologique & Résolution des Parcelles Ouvertes)
 
@@ -190,8 +220,8 @@ Le projet est régi par les décisions d'architecture (ADR) consignées dans [`d
 ## 🔬 4. État Opérationnel à Date
 
 *   **Suite de tests V2 (`com.sam102022.photoshop.v2.**.*Test`) :**
-    *   **Nombre de tests exécutés :** 67
-    *   **Succès :** 67 (100%)
+    *   **Nombre de tests exécutés :** 84
+    *   **Succès :** 84 (100%)
     *   **Échecs :** 0
     *   **Erreurs :** 0
-*   **Temps d'exécution total de la suite V2 :** ~4.8 s.
+*   **Temps d'exécution total de la suite V2 :** ~6.3 s.

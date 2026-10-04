@@ -1,6 +1,6 @@
 # Sprint 5 (V2) — Reconstruction des Frontières Routières & Expansion Géodésique Matricielle
 
-**Statut :** ⏳ Spécification Validée (Prêt pour implémentation)  
+**Statut :** ✅ Validé  
 **Package cible :** `com.sam102022.photoshop.v2.expansion`  
 **Documents associés :**
 * Spécification Technique : [`docs/superpowers/specs/2026-10-04-v2-sprint-5-geodesic-expansion-design.md`](../superpowers/specs/2026-10-04-v2-sprint-5-geodesic-expansion-design.md)
