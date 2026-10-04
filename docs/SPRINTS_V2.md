@@ -73,7 +73,7 @@ SPRINT 7 (Rendu Sub-Pixel Supersampling SS=4 & CLI V2)
 | **Sprint 3** | Segmentation en Cellules (4-connexité) & `CellGraph` | ✅ Validé | `v2.cell` | [sprint-3-cellules-cellgraph.md](sprints_v2/sprint-3-cellules-cellgraph.md) |
 | **Sprint 4** | Moteur de Vote Topologique & Résolution des Parcelles | ✅ Validé | `v2.vote` | [sprint-4-vote-topologique.md](sprints_v2/sprint-4-vote-topologique.md) |
 | **Sprint 5** | Reconstruction des Frontières Routières & Expansion Géodésique | ✅ Validé | `v2.expansion` | [sprint-5-expansion-geodesique.md](sprints_v2/sprint-5-expansion-geodesique.md) |
-| **Sprint 6** | Géométrie Sub-Pixel, Lissage Robuste LQR & Ronds-points | ⏳ À venir | `v2.contour` | [sprint-6-lissage-subpixel-ronds-points.md](sprints_v2/sprint-6-lissage-subpixel-ronds-points.md) |
+| **Sprint 6** | Géométrie Sub-Pixel, Lissage Robuste LQR & Ronds-points | ✅ Validé | `v2.contour` | [sprint-6-lissage-subpixel-ronds-points.md](sprints_v2/sprint-6-lissage-subpixel-ronds-points.md) |
 | **Sprint 7** | Rendu Sub-Pixel Supersampling (SS=4), Export RGBA & CLI V2 | ⏳ À venir | `v2.render` / `v2.pipeline` / `cli` | [sprint-7-rendu-supersampling-cli.md](sprints_v2/sprint-7-rendu-supersampling-cli.md) |
 
 ---
@@ -125,5 +125,5 @@ Le cas d'usage réel `Territoire CA01` sert de banc d'essai étalon commun à to
 | **S3** | `RoadMask` | `CellGraph` | Cellules 4-connexes étanches + `RoadInterfaces` associées *(Validé : 130 cellules, 269 interfaces)* |
 | **S4** | `PolygonMask` + `CellGraph` | `CellSelection` | Vote déterministe (21 cellules pleines / 6 partielles) |
 | **S5** | `CellGraph` + `CellSelection` | `ConsolidatedMask` | Reconstruction des frontières routières (EDT + MCP borné) + îlots résiduels *(Validé : 1 224 942 px, 99.21% vs python)* |
-| **S6** | `ConsolidatedMask` (+ `RoadMask`, `CellLabelMap`) | `SmoothVectorContour` | Contour sub-pixel, LQR robuste sans rabotage, ronds-points par ellipses & Hermite (1 RP sur CA01, Hausdorff <= 2.5px) |
+| **S6** | `ConsolidatedMask` (+ `RoadMask`, `CellLabelMap`) | `SmoothVectorContour` | Contour sub-pixel, LQR robuste sans rabotage, ronds-points par ellipses & Hermite (5 coins majeurs, 1 RP sur CA01, temps 282 ms) *(Validé)* |
 | **S7** | `SmoothVectorContour` + Image source | `RenderResult` | Supersampling vectoriel $\times 4$, découpe RGBA, IoU $\ge 0.99$ vs python V5 |

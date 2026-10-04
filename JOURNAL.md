@@ -33,11 +33,42 @@ Le projet est régi par les décisions d'architecture (ADR) consignées dans [`d
 | **Sprint 3** | Segmentation en Cellules (4-connexité) & `CellGraph` | 04/10/2026 | ✅ Validé | `CropWindow`, `BoundingBoxCropper`, `Cell`, `CellLabelMap`, `CellLabeler`, `RoadInterface`, `RoadInterfaceExtractor`, `CellGraph` |
 | **Sprint 4** | Moteur de Vote Topologique & Résolution des Parcelles | 04/10/2026 | ✅ Validé | `CellState`, `CellSelectionPolicy`, `CellDecision`, `CellSelection`, `CellCoverageCalculator`, `CellClassifier`, `PartialCellResolver`, `TopologicalVoteEngine` |
 | **Sprint 5** | Reconstruction des Frontières Routières & Expansion Géodésique | 04/10/2026 | ✅ Validé | `ExpansionConfig`, `DistanceMap`, `ConsolidatedMask`, `EuclideanDistanceTransform`, `LocalMaxFilter`, `BoundedGeodesicExpander`, `MorphologicalConsolidator`, `ResidualHoleResolver`, `BoundaryRoadPartitioner`, `RoadBoundaryConsolidator` |
-| **Sprint 6** | Géométrie Sub-Pixel, Lissage Robuste LQR & Ronds-points | Cadré (04/10/2026) | ⏳ Prêt pour dév | `SubpixelContourExtractor`, `CornerDetector`, `RobustLqrSmoother`, `RoundaboutDetector`, `HermiteSplineConnector`, `SmoothVectorContour` |
+| **Sprint 6** | Géométrie Sub-Pixel, Lissage Robuste LQR & Ronds-points | 04/10/2026 | ✅ Validé | `ContourSmoothingConfig`, `EllipseModel`, `Roundabout`, `SmoothVectorContour`, `AlgebraicEllipseFitter`, `SubpixelContourExtractor`, `CornerDetector`, `RobustLqrSmoother`, `CornerPreservationBlender`, `RoundaboutDetector`, `HermiteSplineConnector`, `ContourSmoothingEngine` |
 
 ---
 
 ## 📝 3. Entrées Journalières Datées
+
+### Dimanche 04 octobre 2026 : Implémentation Complète et Validation Formelle du Sprint 6 V2 (Géométrie Sub-Pixel, Lissage Robuste LQR & Modélisation des Ronds-points)
+
+*   **Réalisation Opérationnelle des 11 Composants Métier (ADR-008 & ADR-004) :**
+    *   **Contrats de domaine immuables (`ContourSmoothingConfig`, `EllipseModel`, `Roundabout`, `SmoothVectorContour`) :** Records Java garantissant l'immutabilité stricte, les conversions bidirectionnelles euclidiennes vers/depuis le cercle unité normalisé et la restitution géométrique dans la `CropWindow` locale.
+    *   **Solveur direct d'ellipse algébrique 100% Java pur (`AlgebraicEllipseFitter`) :** Implémentation de l'algorithme direct de Halir & Flusser (1998) sous contrainte quadratique $4AC - B^2 = 1$ sans aucune dépendance native. Inversion 3x3 par comatrices, résolution analytique des valeurs propres 3x3 par méthode trigonométrique de Cardano et calcul des résidus euclidiens par méthode itérative de Newton (5 pas).
+    *   **Extracteur sub-pixel Marching Squares 2D (`SubpixelContourExtractor`) :** Comblement des cavités intérieures par inondation BFS inverse, matérialisation d'une grille de cellules $2 \times 2$ avec marge d'un pixel, chaînage direct des segments orientés à isovaleur 0.5 via table de hachage de coordonnées d'arêtes, sélection de la boucle fermée extérieure principale et rééchantillonnage curviligne uniforme à pas spatial régulier ($\text{step} = 1.0\text{ px}$).
+    *   **Détecteur multi-échelles d'angles vifs (`CornerDetector`) :** Pré-filtrage gaussien périodique léger ($\sigma = 4.0\text{ px}$), évaluation des déviations angulaires par vecteurs sécants espacés de $L = 80\text{ px}$ et extraction des sommets vérifiant $\theta \ge 38^\circ$ et la condition de maximum local strict.
+    *   **Lisseur polynomial quadratique LQR robuste (`RobustLqrSmoother`) :** Découpage du contour en segments délimités par les coins, soustraction de la corde directrice $P_0 \to P_1$, convolution polynomiale d'ordre 2 avec pondération gaussienne ($\sigma = 22\text{ px}$, fenêtre $k = 77\text{ px}$), régularisation $\lambda = 10^{-3} M_0 + 10^{-9}$ et résolution locale 3x3 par formule explicite de Cramer. Repondération robuste de Cauchy/Tukey en 6 itérations rejetant complètement les carrefours transversaux sans rabotage de courbure.
+    *   **Modulateur continu de coins par fondu Hermite (`CornerPreservationBlender`) :** Calcul de la distance curviligne minimale périodique aux coins et transition cubique *Smoothstep* ($3\alpha^2 - 2\alpha^3$) entre $R_0 = 35\text{ px}$ (arête brute préservée à 100%) et $R_1 = 95\text{ px}$ (lissage LQR à 100%).
+    *   **Détecteur géométrique de giratoires (`RoundaboutDetector`) :** Identification des cellules candidates îlots centraux ($40 \le \text{area} \le 9000$, non frontalières, compacité/solidité $\ge 0.90$), ajustement d'ellipse sur la frontière de l'îlot, sondage radial de 240 rayons sur la chaussée fermée $R_c$ pour détecter la sortie d'anneau, filtrage des bras de route sur le mode bas (percentile 35 + 1.0 px) et ajustement itératif robuste de l'anneau externe en 8 passes.
+    *   **Connecteur tangentiel $C^1$ et substitution d'arcs (`HermiteSplineConnector`) :** Détection de proximité topologique au rond-point ($\rho \in [0.75, 1.3]$ sur $\ge 12$ points et disque intérieur à $\ge 20\%$ sur le territoire), calcul des bornes de contact $i_A, i_B$, sélection de l'arc extérieur minimisant la traversée du territoire, calcul des tangentes unitaires de voie ($d_A, d_B$ à $\pm 6\text{ px}$) et d'ellipse ($t_A, t_B$), et raccordement par splines cubiques d'Hermite avec garde-fou anti-boucle (repli linéaire direct si déviation $\ge 0.7 L + 2$).
+    *   **Façade d'orchestration (`ContourSmoothingEngine`) :** Assemblage unifié de la chaîne séquentielle complète transformant le `ConsolidatedMask` en `SmoothVectorContour`.
+*   **Validation d'Intégration Pivot CA01 (`Sprint6IntegrationTest`) :**
+    *   Points de contour vectoriel final : **5 214 points sub-pixels** (pas moyen : 1.0 px).
+    *   Coins majeurs authentiques préservés : **5 coins** (exactement conforme aux 5 coins identifiés par l'étalon Python V5 pour $L=80, \theta \ge 38^\circ$).
+    *   Ronds-points substitués : **1 rond-point** (le giratoire sud-est modélisé par ellipse continue avec raccordement Hermite sans boucle).
+    *   Temps d'exécution du Sprint 6 : **~280 à 310 ms** (largement sous le budget de 1 000 ms).
+*   **Conformité ADR & Standards d'Ingénierie :**
+    *   ADR-001 (100% Java standard sans OpenCV, GDAL ni dépendance native) ;
+    *   ADR-004 (Immutabilité via Records : `SmoothVectorContour`, `EllipseModel`, `Roundabout`, `ContourSmoothingConfig`) ;
+    *   ADR-006 (Spécification et plan d'implémentation documentés avant développement) ;
+    *   ADR-007 (Développement incrémental Sprint 6) ;
+    *   ADR-008 (Une seule responsabilité par classe - 11 classes dédiées) ;
+    *   ADR-009 (Logs hiérarchisés en français) ;
+    *   ADR-010 (Suivi journalier) ;
+    *   ADR-011 (Complexité cognitive $\le 15$ respectée sur toutes les méthodes) ;
+    *   ADR-012 (Imports explicites sans FQCN) ;
+    *   ADR-013 (Standardisation timezone) ;
+    *   ADR-014 (Javadoc exhaustive en français sur l'ensemble des types et méthodes).
+    *   Validation globale suite V2 : **103 tests passants sur 103 (100% de réussite)**.
 
 ### Dimanche 04 octobre 2026 : Implémentation Complète et Validation Formelle du Sprint 5 V2 (Reconstruction des Frontières Routières, Expansion Géodésique & ConsolidatedMask)
 
@@ -220,8 +251,8 @@ Le projet est régi par les décisions d'architecture (ADR) consignées dans [`d
 ## 🔬 4. État Opérationnel à Date
 
 *   **Suite de tests V2 (`com.sam102022.photoshop.v2.**.*Test`) :**
-    *   **Nombre de tests exécutés :** 84
-    *   **Succès :** 84 (100%)
+    *   **Nombre de tests exécutés :** 103
+    *   **Succès :** 103 (100%)
     *   **Échecs :** 0
     *   **Erreurs :** 0
-*   **Temps d'exécution total de la suite V2 :** ~6.3 s.
+*   **Temps d'exécution total de la suite V2 :** ~7.8 s.

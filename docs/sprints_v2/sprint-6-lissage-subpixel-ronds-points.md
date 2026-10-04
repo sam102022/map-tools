@@ -1,9 +1,10 @@
 # Sprint 6 (V2) — Géométrie Sub-Pixel, Lissage Robuste LQR & Modélisation des Ronds-points
 
-**Statut :** ⏳ À venir  
+**Statut :** ✅ Validé & Terminé (04/10/2026)  
 **Package cible :** `com.sam102022.photoshop.v2.contour`  
 **Documents associés :**
 * Spécification détaillée : [`docs/superpowers/specs/2026-10-04-v2-sprint-6-subpixel-smoothing-roundabouts-design.md`](../superpowers/specs/2026-10-04-v2-sprint-6-subpixel-smoothing-roundabouts-design.md)
+* Plan d'implémentation : [`docs/superpowers/plans/2026-10-04-v2-sprint-6-subpixel-smoothing-roundabouts.md`](../superpowers/plans/2026-10-04-v2-sprint-6-subpixel-smoothing-roundabouts.md)
 * Spécification générale : [`docs/SPEC_V2_ALGORITHME.md`](../SPEC_V2_ALGORITHME.md)
 * Prototypes Python étalons : [`maps/python/snap_cells_prototype_v5.py`](../../maps/python/snap_cells_prototype_v5.py) et [`maps/python/roundabouts.py`](../../maps/python/roundabouts.py)
 
