@@ -34,10 +34,31 @@ Le projet est régi par les décisions d'architecture (ADR) consignées dans [`d
 | **Sprint 4** | Moteur de Vote Topologique & Résolution des Parcelles | 04/10/2026 | ✅ Validé | `CellState`, `CellSelectionPolicy`, `CellDecision`, `CellSelection`, `CellCoverageCalculator`, `CellClassifier`, `PartialCellResolver`, `TopologicalVoteEngine` |
 | **Sprint 5** | Reconstruction des Frontières Routières & Expansion Géodésique | 04/10/2026 | ✅ Validé | `ExpansionConfig`, `DistanceMap`, `ConsolidatedMask`, `EuclideanDistanceTransform`, `LocalMaxFilter`, `BoundedGeodesicExpander`, `MorphologicalConsolidator`, `ResidualHoleResolver`, `BoundaryRoadPartitioner`, `RoadBoundaryConsolidator` |
 | **Sprint 6** | Géométrie Sub-Pixel, Lissage Robuste LQR & Ronds-points | 04/10/2026 | ✅ Validé | `ContourSmoothingConfig`, `EllipseModel`, `Roundabout`, `SmoothVectorContour`, `AlgebraicEllipseFitter`, `SubpixelContourExtractor`, `CornerDetector`, `RobustLqrSmoother`, `CornerPreservationBlender`, `RoundaboutDetector`, `HermiteSplineConnector`, `ContourSmoothingEngine` |
+| **Sprint 7** | Lissage Adaptatif Multi-Échelle des Tronçons Droits (LQR Élargi) | ⏳ Planifié | En attente | `StraightSegmentSmoother`, `ContourSmoothingConfig` (enrichi), `ContourSmoothingEngine` |
+| **Sprint 8** | Affinage Spectral de la Couverture Alpha & Anti-Aliasing Réel | ⏳ Planifié | En attente | `AllowedRegionBuilder`, `SoftThresholdFilter`, `RoundaboutExemptionModulator`, `AlphaRefiner`, `AlphaRefinementConfig`, `AlphaRefinementMap` |
+| **Sprint 9** | Rendu Sub-Pixel Supersampling (SS=4), Export RGBA & CLI V2 | ⏳ Planifié | En attente | `SupersampleRenderer`, `ImageClipper`, `RenderResult`, `V2Config`, `V2Pipeline`, `V2CliRunner` |
 
 ---
 
 ## 📝 3. Entrées Journalières Datées
+
+### Dimanche 04 octobre 2026 : Analyse Comparative de `snap_cells_prototype_v7.py` et Décomposition des Sprints 7, 8 et 9 V2
+
+*   **Contexte & Analyse d'Écart Algorithmique :**
+    *   L'analyse approfondie de `snap_cells_prototype_v7.py` par rapport à la version V5 initiale a révélé deux avancées déterminantes :
+        1. **Lissage adaptatif multi-échelle sur tronçons droits (Étape 7) :** L'application d'un second lissage LQR à grande échelle ($\sigma_{wide} = 2.7 \times \sigma = 59.4$) combiné à la détection d'écart local $\Delta = \|\mathbf{sm}_b - \mathbf{sm}_a\| \le 3.0\text{ px}$ et un filtre boîte de transition $C^1$ ($k = 10$) permet de redresser les longues avenues et de supprimer les encoches parasites causées par les icônes de signalisation.
+        2. **Affinage spectral de la couverture & anti-aliasing réel (Étape 9) :** La construction du masque autorisé $M_{\text{allowed}} = M_{\text{fill}} \lor R_c \lor \text{îlots ronds-points}$, le comblement des trous intérieurs de voirie $< 2000\text{ px}$, le flou gaussien $\sigma = 1.4\text{ px}$, la fonction de transfert raide $FK = 2.0$ et la protection continue des giratoires par Smoothstep cubique $[2.3 .. 3.0]$ suppriment 28 893 pixels blancs résiduels en bordure de chaussée sur le cas pivot CA01.
+*   **Arbitrage d'Organisation en 3 Sprints Incrémentaux (ADR-007 & ADR-008) :**
+    *   **Sprint 7 :** Lissage Adaptatif Multi-Échelle des Tronçons Droits (`com.sam102022.photoshop.v2.contour`).
+    *   **Sprint 8 :** Affinage Spectral de la Couverture Alpha & Anti-Aliasing Réel (`com.sam102022.photoshop.v2.refine`).
+    *   **Sprint 9 :** Rendu Sub-Pixel Supersampling (SS=4), Export RGBA & Intégration CLI V2 (`com.sam102022.photoshop.v2.render`, `v2.pipeline`, `cli`).
+*   **Documentation et Formalisation Exhaustive (ADR-006) :**
+    *   Rédaction de la spécification de conception globale : [`docs/superpowers/specs/2026-10-04-v2-sprints-7-8-9-python-v7-alignment-design.md`](docs/superpowers/specs/2026-10-04-v2-sprints-7-8-9-python-v7-alignment-design.md).
+    *   Création des spécifications détaillées de sprints :
+        *   [`docs/sprints_v2/sprint-7-lissage-troncons-droits.md`](docs/sprints_v2/sprint-7-lissage-troncons-droits.md)
+        *   [`docs/sprints_v2/sprint-8-affinage-spectral-couverture-alpha.md`](docs/sprints_v2/sprint-8-affinage-spectral-couverture-alpha.md)
+        *   [`docs/sprints_v2/sprint-9-rendu-supersampling-cli.md`](docs/sprints_v2/sprint-9-rendu-supersampling-cli.md)
+    *   Mise à jour du sommaire directeur [`docs/SPRINTS_V2.md`](docs/SPRINTS_V2.md).
 
 ### Dimanche 04 octobre 2026 : Implémentation Complète et Validation Formelle du Sprint 6 V2 (Géométrie Sub-Pixel, Lissage Robuste LQR & Modélisation des Ronds-points)
 

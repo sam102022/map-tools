@@ -1,6 +1,6 @@
 # Planification des Sprints V2 — Découpage par Cellules Topologiques
 
-Ce document constitue le **sommaire directeur** et le guide d'orchestration pour l'implémentation de la V2 de l'algorithme de détourage cartographique, conformément à l'[ADR-007](adr/ADR-007-developpement-par-sprints.md), à la spécification technique [SPEC_V2_ALGORITHME.md](SPEC_V2_ALGORITHME.md) et aux avancées de la référence Python V5 (`maps/python/snap_cells_prototype_v5.py`).
+Ce document constitue le **sommaire directeur** et le guide d'orchestration pour l'implémentation de la V2 de l'algorithme de détourage cartographique, conformément à l'[ADR-007](adr/ADR-007-developpement-par-sprints.md), à la spécification technique [SPEC_V2_ALGORITHME.md](SPEC_V2_ALGORITHME.md) et aux avancées de la référence Python V7 (`maps/python/snap_cells_prototype_v7.py`).
 
 Chaque sprint fait l'objet d'un fichier de spécification détaillé dédié dans le répertoire [`docs/sprints_v2/`](sprints_v2/).
 
@@ -48,14 +48,31 @@ SPRINT 6 (Géométrie Sub-Pixel, Lissage Robuste LQR & Ronds-points)
         └── HermiteSplineConnector (Raccordement C1 sans rupture de courbure)
         │
         ▼
- SmoothVectorContour
+ SmoothVectorContour brut
         │
-SPRINT 7 (Rendu Sub-Pixel Supersampling SS=4 & CLI V2)
+SPRINT 7 (Raffinement du Lissage Vectoriel — Tronçons Droits Multi-Échelles)
         │
-        ├── V2Config (Configuration immuable des hyperparamètres)
-        ├── SupersampleRenderer (Rastérisation vectorielle 4x + box filter -> CoverageMask)
-        ├── ImageClipper (Assemblage RGBA 32-bit clipped, mask, overlay)
-        ├── V2Pipeline (Orchestrateur global Sprints 1 -> 7)
+        ├── StraightSegmentSmoother (Double LQR σ=22 et 2.7σ + détection de rectitude)
+        └── Transition C1 par convolution boîte (k=10, fenêtre 21)
+        │
+        ▼
+ SmoothVectorContour affiné
+        │
+SPRINT 8 (Affinage Spectral de la Couverture Alpha & Anti-Aliasing Réel)
+        │
+        ├── AllowedRegionBuilder (Mfill | Rc | giratoires + micro-trous < 2000 px)
+        ├── SoftThresholdFilter (Flou gaussien FS=1.4 px + seuil raide FK=2.0)
+        └── RoundaboutExemptionModulator (Protection elliptique ronds-points zw [2.3..3.0])
+        │
+        ▼
+ AlphaRefinementMap
+        │
+SPRINT 9 (Rendu Sub-Pixel Supersampling SS=4, Export RGBA & CLI V2)
+        │
+        ├── V2Config (Configuration unifiée des hyperparamètres S1 -> S8)
+        ├── SupersampleRenderer (Rastérisation SS=4 sur ROI + box filter + modulation d'affinage)
+        ├── ImageClipper (Assemblage RGBA 32-bit clipped, mask 8-bit, overlay rouge)
+        ├── V2Pipeline (Orchestrateur global de bout en bout Sprints 1 -> 9)
         └── V2CliRunner (CLI --v2 avec hyperparamètres documentés)
         │
         ▼
@@ -74,7 +91,9 @@ SPRINT 7 (Rendu Sub-Pixel Supersampling SS=4 & CLI V2)
 | **Sprint 4** | Moteur de Vote Topologique & Résolution des Parcelles | ✅ Validé | `v2.vote` | [sprint-4-vote-topologique.md](sprints_v2/sprint-4-vote-topologique.md) |
 | **Sprint 5** | Reconstruction des Frontières Routières & Expansion Géodésique | ✅ Validé | `v2.expansion` | [sprint-5-expansion-geodesique.md](sprints_v2/sprint-5-expansion-geodesique.md) |
 | **Sprint 6** | Géométrie Sub-Pixel, Lissage Robuste LQR & Ronds-points | ✅ Validé | `v2.contour` | [sprint-6-lissage-subpixel-ronds-points.md](sprints_v2/sprint-6-lissage-subpixel-ronds-points.md) |
-| **Sprint 7** | Rendu Sub-Pixel Supersampling (SS=4), Export RGBA & CLI V2 | ⏳ À venir | `v2.render` / `v2.pipeline` / `cli` | [sprint-7-rendu-supersampling-cli.md](sprints_v2/sprint-7-rendu-supersampling-cli.md) |
+| **Sprint 7** | Lissage Adaptatif Multi-Échelle des Tronçons Droits (LQR Élargi) | ⏳ À venir | `v2.contour` | [sprint-7-lissage-troncons-droits.md](sprints_v2/sprint-7-lissage-troncons-droits.md) |
+| **Sprint 8** | Affinage Spectral de la Couverture Alpha & Anti-Aliasing Réel | ⏳ À venir | `v2.refine` | [sprint-8-affinage-spectral-couverture-alpha.md](sprints_v2/sprint-8-affinage-spectral-couverture-alpha.md) |
+| **Sprint 9** | Rendu Sub-Pixel Supersampling (SS=4), Export RGBA & CLI V2 | ⏳ À venir | `v2.render` / `v2.pipeline` / `cli` | [sprint-9-rendu-supersampling-cli.md](sprints_v2/sprint-9-rendu-supersampling-cli.md) |
 
 ---
 
@@ -90,12 +109,16 @@ Chaque sprint s'appuie sur des contrats d'entrée/sortie immuables sous forme de
   Modélise les cellules urbaines, la matrice de labels et les interfaces routières locales les reliant.
 * **Sprint 4 ➔ Sprint 5 : `CellSelection`**
   Synthétise les identifiants de cellules retenues (`inside`), rejetées (`outside`) et mixtes (`partial`), ainsi que le masque d'amorçage matriciel local $T$ (`retainedMask`).
-* **Sprint 5 ➔ Sprint 6 : `ConsolidatedMask`**
-  Masque binaire étanche consolidé sur la boîte englobante locale après expansion géodésique (fourni avec `RoadMask`, `CellLabelMap` et `CropWindow` pour la modélisation des ronds-points).
+* **Sprint 5 ➔ Sprint 6 / 8 : `ConsolidatedMask`**
+  Masque binaire étanche consolidé sur la boîte englobante locale après expansion géodésique.
 * **Sprint 6 ➔ Sprint 7 : `SmoothVectorContour` & `CropWindow`**
-  Contour vectoriel continu sub-pixel lissé par régression quadratique locale et ellipses d'îlots, rattaché à son repère ROI.
-* **Sprint 7 : `RenderResult`**
-  Ensemble des images de production (`clipped`, `mask`, `overlay`) et du `CoverageMask` continu.
+  Contour vectoriel continu sub-pixel lissé par régression LQR locale avec substitution d'arcs giratoires.
+* **Sprint 7 ➔ Sprint 9 : `SmoothVectorContour` (affiné)**
+  Contour vectoriel sub-pixel dont les longs alignements droits ont été redressés par lissage multi-échelle adaptatif.
+* **Sprint 8 ➔ Sprint 9 : `AlphaRefinementMap`**
+  Grille flottante locale $[0.0 .. 1.0]$ issue de l'analyse spectrale et du seuillage doux avec bouclier de protection des ronds-points.
+* **Sprint 9 : `RenderResult`**
+  Ensemble des images de production (`clipped`, `mask`, `overlay`) et du `CoverageMask` continu global.
 
 ---
 
@@ -126,4 +149,6 @@ Le cas d'usage réel `Territoire CA01` sert de banc d'essai étalon commun à to
 | **S4** | `PolygonMask` + `CellGraph` | `CellSelection` | Vote déterministe (21 cellules pleines / 6 partielles) |
 | **S5** | `CellGraph` + `CellSelection` | `ConsolidatedMask` | Reconstruction des frontières routières (EDT + MCP borné) + îlots résiduels *(Validé : 1 224 942 px, 99.21% vs python)* |
 | **S6** | `ConsolidatedMask` (+ `RoadMask`, `CellLabelMap`) | `SmoothVectorContour` | Contour sub-pixel, LQR robuste sans rabotage, ronds-points par ellipses & Hermite (5 coins majeurs, 1 RP sur CA01, temps 282 ms) *(Validé)* |
-| **S7** | `SmoothVectorContour` + Image source | `RenderResult` | Supersampling vectoriel $\times 4$, découpe RGBA, IoU $\ge 0.99$ vs python V5 |
+| **S7** | `SmoothVectorContour` brut | `SmoothVectorContour` affiné | Redressement des avenues droites, Hausdorff $\le 2.0\text{ px}$, RMS $\le 0.5\text{ px}$ vs `contour_smooth.npy` V7 |
+| **S8** | `ConsolidatedMask`, `RoadMask`, Giratoires | `AlphaRefinementMap` | Neutralisation de ~28 893 px blancs en périphérie de route, protection ronds-points zw |
+| **S9** | `SmoothVectorContour` + `AlphaRefinementMap` + Image | `RenderResult` | Supersampling vectoriel $\times 4$, découpe RGBA, IoU $\ge 0.99$ vs `CA01_clipped_v7.png` |
