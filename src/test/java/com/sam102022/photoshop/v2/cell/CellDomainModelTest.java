@@ -16,10 +16,15 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Tests unitaires validant les invariants et méthodes des contrats de domaine du Sprint 3.
+ * Suite de tests unitaires pour les contrats et modèles de domaine du Sprint 3
+ * ({@link CropWindow}, {@link CellLabelMap}, {@link Cell}, {@link RoadInterface}, {@link CellGraph}).
  */
+@DisplayName("Validation des contrats et invariants du domaine du Sprint 3")
 class CellDomainModelTest {
 
+    /**
+     * Vérifie les calculs de bornes, d'inclusion et la validation des préconditions de CropWindow.
+     */
     @Test
     @DisplayName("CropWindow : validation des bornes et prédicats")
     void testCropWindow() {
@@ -43,6 +48,9 @@ class CellDomainModelTest {
         assertThrows(IllegalArgumentException.class, () -> new CropWindow(0, 0, 10, 0));
     }
 
+    /**
+     * Vérifie les accès, les requêtes d'appartenance et l'isolation par copie défensive de CellLabelMap.
+     */
     @Test
     @DisplayName("CellLabelMap : validation des accès, copies défensives et limites")
     void testCellLabelMap() {
@@ -79,6 +87,9 @@ class CellDomainModelTest {
         assertThrows(IllegalArgumentException.class, () -> new CellLabelMap(3, 2, null, 2));
     }
 
+    /**
+     * Vérifie les invariants géométriques, l'immuabilité et les dimensions de Cell.
+     */
     @Test
     @DisplayName("Cell : validation des invariants et calcul des dimensions")
     void testCell() {
@@ -104,6 +115,9 @@ class CellDomainModelTest {
                 () -> new Cell(1, 50, 10, 20, 15, 30, null));
     }
 
+    /**
+     * Vérifie l'invariant d'ordonnancement cellA &lt; cellB et les méthodes d'accès de RoadInterface.
+     */
     @Test
     @DisplayName("RoadInterface : validation de l'ordonnancement cellA < cellB et opposés")
     void testRoadInterface() {
@@ -132,6 +146,9 @@ class CellDomainModelTest {
         assertThrows(IllegalArgumentException.class, () -> new RoadInterface(1, 2, 5, mask, 0));
     }
 
+    /**
+     * Vérifie la recherche par identifiant, l'accès aux interfaces et les voisinages dans CellGraph.
+     */
     @Test
     @DisplayName("CellGraph : validation de la navigation et relations de voisinage")
     void testCellGraph() {

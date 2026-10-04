@@ -4,20 +4,22 @@ import com.sam102022.photoshop.core.model.BinaryMask;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Tests unitaires validant l'extraction d'interfaces routières et la construction du CellGraph.
+ * Suite de tests unitaires pour l'extracteur topologique {@link RoadInterfaceExtractor}.
  */
+@DisplayName("Validation de l'extracteur d'interfaces routières RoadInterfaceExtractor")
 class RoadInterfaceExtractorTest {
 
+    /**
+     * Vérifie l'extraction d'une interface routière reliant deux cellules séparées par une chaussée de 2 pixels.
+     */
     @Test
     @DisplayName("Extraction d'interface routière entre deux cellules séparées par une route de 2px")
     void testTwoCellsSeparatedByRoad() {
@@ -53,6 +55,9 @@ class RoadInterfaceExtractorTest {
         assertEquals(ri.id(), found.get().id());
     }
 
+    /**
+     * Vérifie la gestion d'un carrefour en T avec 3 interfaces routières séparant 3 cellules contiguës.
+     */
     @Test
     @DisplayName("Carrefour en T séparant 3 cellules urbaines")
     void testThreeCellsWithIntersection() {
@@ -87,6 +92,9 @@ class RoadInterfaceExtractorTest {
         assertTrue(graph.findInterface(2, 3).isPresent());
     }
 
+    /**
+     * Vérifie le rejet par exception de paramètres invalides ou incohérents en dimension.
+     */
     @Test
     @DisplayName("Validation défensive des paramètres invalides")
     void testValidation() {

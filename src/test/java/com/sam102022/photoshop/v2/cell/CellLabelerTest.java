@@ -4,19 +4,20 @@ import com.sam102022.photoshop.core.model.BinaryMask;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.util.List;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Tests unitaires validant l'étiqueteur CellLabeler en 4-connexité stricte.
+ * Suite de tests unitaires pour l'étiqueteur de composantes connexes {@link CellLabeler} en 4-connexité stricte.
  */
+@DisplayName("Validation de l'étiqueteur 4-connexe CellLabeler")
 class CellLabelerTest {
 
+    /**
+     * Vérifie la séparation étanche de deux cellules par une bande de route horizontale continue.
+     */
     @Test
     @DisplayName("Deux cellules étanches séparées par une route horizontale")
     void testTwoCellsSeparatedByRoad() {
@@ -44,12 +45,12 @@ class CellLabelerTest {
         assertEquals(4, cellBottom.maxY());
     }
 
+    /**
+     * Démontre l'étanchéité 4-connexe stricte : deux pixels opposés en diagonale ne fusionnent pas.
+     */
     @Test
     @DisplayName("Preuve de la 4-connexité : deux pixels diagonaux ne fusionnent PAS")
     void testStrictFourConnectivityNoDiagonalBridge() {
-        // Matrice 2x2 en damier :
-        // (0,0) = cell, (1,0) = road
-        // (0,1) = road, (1,1) = cell
         BinaryMask road = new BinaryMask(2, 2);
         road.set(1, 0, true);
         road.set(0, 1, true);
@@ -70,6 +71,9 @@ class CellLabelerTest {
         assertNotEquals(label00, label11, "Les deux pixels en diagonale ne doivent pas avoir le même label.");
     }
 
+    /**
+     * Vérifie qu'un masque intégralement recouvert de routes génère 0 cellule.
+     */
     @Test
     @DisplayName("Masque entièrement route -> 0 cellule")
     void testAllRoad() {
@@ -87,6 +91,9 @@ class CellLabelerTest {
         assertTrue(result.cells().isEmpty());
     }
 
+    /**
+     * Vérifie qu'un masque sans aucune route génère exactement 1 cellule occupant la totalité de l'espace.
+     */
     @Test
     @DisplayName("Masque entièrement ouvert (aucune route) -> 1 cellule de surface totale")
     void testAllOpen() {
@@ -108,6 +115,9 @@ class CellLabelerTest {
         assertEquals(3.5, cell.centroid().y(), 1e-6);
     }
 
+    /**
+     * Vérifie le rejet par exception d'un masque d'entrée null.
+     */
     @Test
     @DisplayName("Rejet d'un masque null")
     void testNullMask() {

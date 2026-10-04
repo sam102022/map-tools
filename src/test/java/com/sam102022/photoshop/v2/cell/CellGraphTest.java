@@ -6,27 +6,26 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.Optional;
-import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Tests unitaires validant les fonctionnalités avancées du CellGraph.
+ * Suite de tests unitaires pour le composant {@link CellGraph}.
  */
+@DisplayName("Validation du graphe topologique CellGraph")
 class CellGraphTest {
 
+    /**
+     * Vérifie le comportement nominal d'un graphe comportant des cellules sans aucune interface routière.
+     */
     @Test
     @DisplayName("Graphe avec cellule isolée sans interface routière")
     void testIsolatedCell() {
         Cell cell1 = new Cell(1, 100, 0, 0, 9, 9, new PixelPoint(4.5, 4.5));
         Cell cell2 = new Cell(2, 50, 20, 20, 25, 25, new PixelPoint(22.5, 22.5));
 
-        // Aucune interface routière
         CellGraph graph = new CellGraph(List.of(cell1, cell2), List.of());
 
         assertEquals(2, graph.cells().size());
@@ -37,6 +36,9 @@ class CellGraphTest {
         assertTrue(graph.findInterface(1, 2).isEmpty());
     }
 
+    /**
+     * Vérifie l'immutabilité stricte des collections exposées par le CellGraph.
+     */
     @Test
     @DisplayName("Immutabilité des collections retournées par le CellGraph")
     void testImmutability() {
@@ -52,6 +54,9 @@ class CellGraphTest {
         assertThrows(UnsupportedOperationException.class, () -> graph.getNeighbors(1).add(99));
     }
 
+    /**
+     * Vérifie le rejet par exception de paramètres null passés au constructeur de CellGraph.
+     */
     @Test
     @DisplayName("Rejet des paramètres null à l'instanciation")
     void testNullValidation() {

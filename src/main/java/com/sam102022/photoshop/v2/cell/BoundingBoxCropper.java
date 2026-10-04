@@ -70,6 +70,12 @@ public class BoundingBoxCropper {
 
     /**
      * Valide les préconditions des arguments du calcul de découpe.
+     *
+     * @param points Sommets du polygone d'intention.
+     * @param width  Largeur de l'image de référence en pixels.
+     * @param height Hauteur de l'image de référence en pixels.
+     * @param margin Marge de sécurité en pixels.
+     * @throws IllegalArgumentException si la liste de sommets est null ou vide, si les dimensions sont non strictement positives, ou si la marge est négative.
      */
     private void validateInputs(List<PixelPoint> points, int width, int height, int margin) {
         if (points == null || points.isEmpty()) {

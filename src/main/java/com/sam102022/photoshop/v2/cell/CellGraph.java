@@ -66,7 +66,11 @@ public record CellGraph(
     }
 
     /**
-     * Construit la table d'indexation identifiant -> Cellule.
+     * Construit la table d'indexation identifiant vers Cellule.
+     *
+     * @param cells Liste des cellules sources.
+     * @return Table associative mappant chaque identifiant à son instance de Cell.
+     * @throws IllegalArgumentException si la liste de cellules est null.
      */
     private static Map<Integer, Cell> buildCellMap(List<Cell> cells) {
         if (cells == null) {
@@ -80,7 +84,11 @@ public record CellGraph(
     }
 
     /**
-     * Construit la table d'indexation cellule -> liste des interfaces routières connectées.
+     * Construit la table d'indexation cellule vers liste des interfaces routières connectées.
+     *
+     * @param interfaces Liste des interfaces routières à indexer.
+     * @return Table associative liant chaque identifiant de cellule à ses interfaces adjacentes.
+     * @throws IllegalArgumentException si la liste d'interfaces routières est null.
      */
     private static Map<Integer, List<RoadInterface>> buildInterfacesMap(List<RoadInterface> interfaces) {
         if (interfaces == null) {
