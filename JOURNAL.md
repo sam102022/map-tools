@@ -30,7 +30,7 @@ Le projet est régi par les décisions d'architecture (ADR) consignées dans [`d
 | :--- | :--- | :--- | :--- | :--- |
 | **Sprint 1** | Socle Géométrique, Projection Web Mercator & Rasterisation | 02/10/2026 | ✅ Validé | `GeoCoordinate`, `PixelPoint`, `MapContext`, `TerritoryGeometry`, `WebMercatorProjection`, `JsonTerritoryLoader`, `PolygonRasterizer`, `PolygonMask` |
 | **Sprint 2** | Détection Colorimétrique des Routes & Fermeture Topologique | 03/10/2026 | ✅ Validé | `RoadMask`, `RoadDetector`, `RoadDetectorStyle`, `RoadMaskCleaner`, `RoadDetectorOsm` |
-| **Sprint 3** | Segmentation en Cellules (4-connexité) & `CellGraph` | Planifié | ⏳ À venir | `CellLabeler`, `Cell`, `RoadInterface`, `CellGraph` |
+| **Sprint 3** | Segmentation en Cellules (4-connexité) & `CellGraph` | 04/10/2026 | ✅ Validé | `CropWindow`, `BoundingBoxCropper`, `Cell`, `CellLabelMap`, `CellLabeler`, `RoadInterface`, `RoadInterfaceExtractor`, `CellGraph` |
 | **Sprint 4** | Moteur de Vote Topologique & Résolution des Parcelles | Planifié | ⏳ À venir | `CellCoverageCalculator`, `CellClassifier`, `PartialCellResolver`, `CellSelection` |
 | **Sprint 5** | Reconstruction des Frontières Routières & Expansion Géodésique | Planifié | ⏳ À venir | `BoundingBoxCropper`, `BoundaryRoadExtractor`, `RoadDistanceTransform`, `GeodesicRoadExpander`, `ResidualHoleResolver` |
 | **Sprint 6** | Géométrie Sub-Pixel, Lissage Robuste LQR & Ronds-points | Planifié | ⏳ À venir | `SubpixelContourExtractor`, `CornerDetector`, `RobustLqrSmoother`, `RoundaboutDetector`, `HermiteSplineConnector` |
@@ -39,6 +39,31 @@ Le projet est régi par les décisions d'architecture (ADR) consignées dans [`d
 ---
 
 ## 📝 3. Entrées Journalières Datées
+
+### Dimanche 04 octobre 2026 : Cadrage (Spec & Plan) et Finalisation Intégrale du Sprint 3 V2
+
+*   **Cadrage et Conception formelle préalable (ADR-006) :**
+    *   Rédaction de la spécification technique exhaustive : [`docs/superpowers/specs/2026-10-04-v2-sprint-3-cell-segmentation-design.md`](docs/superpowers/specs/2026-10-04-v2-sprint-3-cell-segmentation-design.md).
+    *   Rédaction du plan d'implémentation opérationnel TDD : [`docs/superpowers/plans/2026-10-04-v2-sprint-3-cell-segmentation.md`](docs/superpowers/plans/2026-10-04-v2-sprint-3-cell-segmentation.md).
+    *   Résolution des 4 zones d'ombre algorithmiques :
+        1. Avancement du `BoundingBoxCropper` au Sprint 3 (avec marge $mg = 90\text{ px}$ alignée sur la troncature entière du prototype Python) divisant la surface de calcul par 3 ($1505 \times 1783$ pixels).
+        2. Définition opérationnelle de `RoadInterface` via détection directe sur routes minces et propagation Voronoi multi-sources (BFS) sur routes larges.
+        3. Stockage matriciel compact des labels via `CellLabelMap` ($int[]$).
+        4. Figeage des métriques d'acceptation déterministes sur CA01 : exactement 130 cellules.
+
+*   **Fonctionnalités et modules implémentés :**
+    *   **Contrats de domaine immuables (`CropWindow`, `CellLabelMap`, `Cell`, `RoadInterface`, `CellLabelingResult`, `CellGraph`) :** Modèles de données avec validation défensive des préconditions et méthodes d'assistance à la navigation d'adjacence.
+    *   **Découpeur de boîte englobante `BoundingBoxCropper` :** Calcul de la fenêtre de recadrage avec marge de sécurité et découpe matricielle de `BinaryMask`.
+    *   **Étiqueteur en 4-connexité stricte `CellLabeler` :** Algorithme Two-Pass avec structure d'équivalences *Union-Find* (compression de chemin et fusion par rang), éliminant tout pont diagonal à travers les carrefours.
+    *   **Extracteur d'interfaces routières `RoadInterfaceExtractor` :** Détection d'adjacence par contact direct et propagation Voronoi BFS dans la chaussée, construction automatique du `CellGraph`.
+    *   **Documentation Javadoc exhaustive en français (ADR-014) :** Intégration systématique des commentaires Javadoc sur toutes les classes et méthodes.
+
+*   **Validation & Métriques :**
+    *   **Test d'intégration pivot `Sprint3IntegrationTest` sur Territoire CA01 :**
+        *   Nombre de cellules détectées : **exactement 130 cellules** (concordance déterministe à 100% avec l'étalon Python `ndi.label(~Rc)`) ;
+        *   Nombre d'interfaces routières identifiées : **269 interfaces** (concordance exacte avec l'analyse d'adjacence Voronoi Python) ;
+        *   Temps d'exécution du pipeline complet : **~800 ms** (critère $\le 1000\text{ ms}$).
+    *   **Suite de tests V2 :** 51/51 tests réussis (100% de succès sur l'ensemble des packages V2 geometry, road et cell).
 
 ### Samedi 03 octobre 2026 : Implémentation et Validation Complète du Sprint 2 V2
 
@@ -77,8 +102,8 @@ Le projet est régi par les décisions d'architecture (ADR) consignées dans [`d
 ## 🔬 4. État Opérationnel à Date
 
 *   **Suite de tests V2 (`com.sam102022.photoshop.v2.**.*Test`) :**
-    *   **Nombre de tests exécutés :** 30
-    *   **Succès :** 30 (100%)
+    *   **Nombre de tests exécutés :** 51
+    *   **Succès :** 51 (100%)
     *   **Échecs :** 0
     *   **Erreurs :** 0
-*   **Temps d'exécution total de la suite V2 :** 3.3 s.
+*   **Temps d'exécution total de la suite V2 :** 4.3 s.
