@@ -6,6 +6,17 @@ Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/)
 ## [Non publié] - 2026-10-05
 
 ### Ajouté
+- **Sprint 8 (V2) - Affinage Spectral de la Couverture Alpha & Anti-Aliasing Réel** :
+  - `AllowedRegionBuilder` : Construction du masque binaire de l'espace autorisé $M_{\text{allowed}} = M_{\text{fill}} \lor R_c \lor \text{îlots ronds-points}$ et comblement sélectif des cavités intérieures compactes de chaussée ($< 2000\text{ px}$).
+  - `SoftThresholdFilter` : Filtre de convolution gaussienne séparable 2D ($\sigma = 1.4\text{ px}$) avec conditions aux limites réfléchies (miroir demi-échantillon) et fonction de transfert à contraste renforcé ($FK = 2.0$) clampée dans $[0.0 .. 1.0]$, optimisé pour une exécution ultra-rapide en cache L1.
+  - `RoundaboutExemptionModulator` : Modulateur d'exemption spectrale sanctuarisant les carrefours giratoires substitués par un bouclier interpolé en Smoothstep cubique $C^1$ ($3t^2 - 2t^3$) entre $FZ_0 = 2.3$ et $FZ_1 = 3.0$ en rayons normés d'ellipse.
+  - `AlphaRefiner` : Façade d'orchestration de bout en bout de l'affinage spectral avec injection de dépendances et surcharge de commodité avec configuration par défaut.
+  - `AlphaRefinementConfig` : Record immuable regroupant les hyperparamètres calibrés (`gaussianBlurSigma`, `contrastStiffness`, `roundaboutBufferInner`, `roundaboutBufferOuter`, `roadHoleMaxArea`).
+  - `AlphaRefinementMap` : Record immuable encapsulant la matrice locale 2D `float[][] factor` sur la `CropWindow` avec copie défensive et accesseur unitaire `factorAt(x, y)`.
+  - `SmoothVectorContour` & `Roundabout` : Traçabilité des ronds-points substitués et exposition de `cellId`.
+  - Tests unitaires et d'intégration complets : `AllowedRegionBuilderTest`, `SoftThresholdFilterTest`, `RoundaboutExemptionModulatorTest`, `AlphaRefinementModelTest`, `AlphaRefinerTest`.
+  - Test d'intégration pivot CA01 `Sprint8IntegrationTest` validant l'enchaînement des Sprints 1 à 8, la sanctuarisation totale du giratoire ($\text{factor} = 1.0f$), la neutralisation des pixels résiduels en débordement de chaussée et le respect du budget de performance (~330 ms pour un budget $\le 1000\text{ ms}$).
+
 - **Sprint 7 (V2) - Lissage Adaptatif Multi-Échelle des Tronçons Droits (Double LQR)** :
   - `StraightSegmentSmoother` : Composant dédié (SRP) exécutant un double lissage LQR multi-échelle ($\sigma = 22.0$ et $\sigma_{wide} = 59.4$) avec évaluation d'écart géométrique local $\Delta = \|\mathbf{sm}_b - \mathbf{sm}_a\|$, seuillage de rectitude ($ST\_T = 3.0\text{ px}$) et transition continue $C^1$ par convolution boîte 1D avec réplication de bord ($k = 10$).
   - `ContourSmoothingConfig` : Enrichissement du record immuable avec les 4 hyperparamètres étalonnés sur Python V7 (`straightFactor`, `straightScale`, `straightThreshold`, `straightTransitionK`) et validation d'invariants.

@@ -35,12 +35,56 @@ Le projet est régi par les décisions d'architecture (ADR) consignées dans [`d
 | **Sprint 5** | Reconstruction des Frontières Routières & Expansion Géodésique | 04/10/2026 | ✅ Validé | `ExpansionConfig`, `DistanceMap`, `ConsolidatedMask`, `EuclideanDistanceTransform`, `LocalMaxFilter`, `BoundedGeodesicExpander`, `MorphologicalConsolidator`, `ResidualHoleResolver`, `BoundaryRoadPartitioner`, `RoadBoundaryConsolidator` |
 | **Sprint 6** | Géométrie Sub-Pixel, Lissage Robuste LQR & Ronds-points | 04/10/2026 | ✅ Validé | `ContourSmoothingConfig`, `EllipseModel`, `Roundabout`, `SmoothVectorContour`, `AlgebraicEllipseFitter`, `SubpixelContourExtractor`, `CornerDetector`, `RobustLqrSmoother`, `CornerPreservationBlender`, `RoundaboutDetector`, `HermiteSplineConnector`, `ContourSmoothingEngine` |
 | **Sprint 7** | Lissage Adaptatif Multi-Échelle des Tronçons Droits (LQR Élargi) | 05/10/2026 | ✅ Validé | `StraightSegmentSmoother`, `ContourSmoothingConfig` (enrichi), `ContourSmoothingEngine` |
-| **Sprint 8** | Affinage Spectral de la Couverture Alpha & Anti-Aliasing Réel | ⏳ Planifié | En attente | `AllowedRegionBuilder`, `SoftThresholdFilter`, `RoundaboutExemptionModulator`, `AlphaRefiner`, `AlphaRefinementConfig`, `AlphaRefinementMap` |
+| **Sprint 8** | Affinage Spectral de la Couverture Alpha & Anti-Aliasing Réel | 05/10/2026 | ✅ Validé | `AllowedRegionBuilder`, `SoftThresholdFilter`, `RoundaboutExemptionModulator`, `AlphaRefiner`, `AlphaRefinementConfig`, `AlphaRefinementMap` |
 | **Sprint 9** | Rendu Sub-Pixel Supersampling (SS=4), Export RGBA & CLI V2 | ⏳ Planifié | En attente | `SupersampleRenderer`, `ImageClipper`, `RenderResult`, `V2Config`, `V2Pipeline`, `V2CliRunner` |
 
 ---
 
 ## 📝 3. Entrées Journalières Datées
+
+### Lundi 05 octobre 2026 : Implémentation Complète et Validation Formelle du Sprint 8 V2 (Affinage Spectral de la Couverture Alpha & Anti-Aliasing Réel)
+
+*   **Réalisation Opérationnelle des 6 Composants Métier (ADR-008, ADR-004 & ADR-001) :**
+    *   **Traçabilité des Ronds-Points Substitués (`SmoothVectorContour` & `Roundabout`) :**
+        *   Enrichissement du record `Roundabout` avec l'identifiant de cellule urbaine associée `int cellId` ;
+        *   Extension de `HermiteSplineConnector` avec `integrateRoundaboutsWithTracking` retournant `RoundaboutSubstitutionResult(contour, substitutedRoundabouts)` ;
+        *   Conservation de la liste des ronds-points effectivement substitués dans `SmoothVectorContour`.
+    *   **Modèles de Domaine Immuables (ADR-004) :**
+        *   `AlphaRefinementConfig` : Record immuable encapsulant les hyperparamètres étalonnés sur Python V7 (`gaussianBlurSigma` = 1.4, `contrastStiffness` = 2.0, `roundaboutBufferInner` = 2.3, `roundaboutBufferOuter` = 3.0, `roadHoleMaxArea` = 2000 px) avec validation stricte d'invariants ;
+        *   `AlphaRefinementMap` : Record immuable contenant la grille locale 2D `float[][] factor` sur la `CropWindow`, isolation défensive par copie de tableau et méthode d'accès `factorAt(int x, int y)`.
+    *   **Composant `AllowedRegionBuilder` (SRP, ADR-008) :**
+        *   Comblement intégral des cavités intérieures du territoire consolidé $M_{\text{fill}} = \text{fillHoles}(M_c)$ ;
+        *   Fusion logique binaire $M_{\text{allowed}} = M_{\text{fill}} \lor R_c$ avec réintégration systématique des pixels des cellules d'îlots giratoires substitués ;
+        *   Comblement sélectif des cavités compactes de voirie d'aire strictement inférieure à `roadHoleMaxArea` ($2000\text{ px}$).
+    *   **Composant `SoftThresholdFilter` (SRP, ADR-008) :**
+        *   Convolution gaussienne 2D séparable discrète (filtre horizontal puis vertical) avec conditions aux limites réfléchies miroir demi-échantillon (half-sample symmetric) conformes à SciPy `mode='reflect'` ;
+        *   Optimisation haute performance évitant le calcul de miroir sur le cœur intérieur du masque et réorganisant la convolution verticale par lignes pour un accès mémoire contigu L1/SIMD ;
+        *   Fonction de transfert raide $\text{factor}(x, y) = \text{clamp}((\text{allowed}_s - 0.5) \times FK + 0.5, 0.0, 1.0)$ avec $FK = 2.0$.
+    *   **Composant `RoundaboutExemptionModulator` (SRP, ADR-008) :**
+        *   Projection des pixels de la boîte englobante locale dans l'espace canonique unitaire de l'ellipse giratoire extérieure $\rho = \|(u_x, u_y)\|$ ;
+        *   Interpolation continue en Smoothstep cubique $C^1$ ($s(t) = 3t^2 - 2t^3$) sur la zone de transition $[FZ_0 = 2.3 .. FZ_1 = 3.0]$ ;
+        *   Sanctuarisation totale du facteur : $\text{factor}_{\text{protected}} = \text{rawFactor} + z_w \times (1.0 - \text{rawFactor})$.
+    *   **Façade d'Orchestration `AlphaRefiner` (ADR-008 & ADR-009) :**
+        *   Coordonne la séquence de bout en bout avec injection de dépendances des 3 sous-composants ;
+        *   Journalisation détaillée hiérarchisée en français (durée en millisecondes, dimensions, giratoires substitués).
+*   **Validation des Directives Architecturales & Standards de Qualité :**
+    *   **ADR-001 (100% Java Standard) :** Algorithmes mathématiques et de traitement d'images implémentés en Java 21 pur sans bibliothèque externe (ni SciPy, ni OpenCV).
+    *   **ADR-004 (Immutabilité des Modèles) :** Usage exclusif des Java Records pour la configuration et les matrices de transfert.
+    *   **ADR-008 (Responsabilité Unique) :** Découpage strict en 4 sous-classes spécialisées testées unitairement.
+    *   **ADR-009 (Logs Hiérarchisés en Français) :** Logs applicatifs informatifs via `java.util.logging.Logger`.
+    *   **ADR-011 (Complexité Cognitive <= 15) :** Toutes les méthodes présentent une complexité cognitive $\le 5$.
+    *   **ADR-012 (Imports Explicites) :** Aucun nom pleinement qualifié (FQCN) dans le code.
+    *   **ADR-014 (Javadoc Exhaustive FR) :** Documentation intégrale en français sur tous les types, méthodes et paramètres.
+*   **Métriques de Validation & Résultats sur le Cas Pivot CA01 :**
+    *   **Suite de tests V2 (`com.sam102022.photoshop.v2.**.*Test`) :**
+        *   **Nombre de tests exécutés :** 136
+        *   **Succès :** 136 (100%)
+        *   **Échecs :** 0
+        *   **Erreurs :** 0
+    *   **Test d'intégration pivot `Sprint8IntegrationTest` sur CA01 ($1505 \times 1783\text{ px}$) :**
+        *   Sanctuarisation totale du carrefour giratoire substitué au centre $(\text{factor} = 1.0f)$ ;
+        *   Neutralisation constatée de 922 pixels résiduels en débordement de lisière routière ;
+        *   Temps d'exécution de l'étape d'affinage spectral : **~330 ms** (pour un budget $\le 1000\text{ ms}$).
 
 ### Lundi 05 octobre 2026 : Implémentation Complète et Validation Formelle du Sprint 7 V2 (Lissage Adaptatif Multi-Échelle des Tronçons Droits & Double LQR)
 
@@ -311,8 +355,8 @@ Le projet est régi par les décisions d'architecture (ADR) consignées dans [`d
 ## 🔬 4. État Opérationnel à Date
 
 *   **Suite de tests V2 (`com.sam102022.photoshop.v2.**.*Test`) :**
-    *   **Nombre de tests exécutés :** 112
-    *   **Succès :** 112 (100%)
+    *   **Nombre de tests exécutés :** 136
+    *   **Succès :** 136 (100%)
     *   **Échecs :** 0
     *   **Erreurs :** 0
-*   **Temps d'exécution total de la suite V2 :** ~8.8 s.
+*   **Temps d'exécution total de la suite V2 :** ~12.5 s.
