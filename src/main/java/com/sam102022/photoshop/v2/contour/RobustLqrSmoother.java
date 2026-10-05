@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Lisseur par régression quadratique locale robuste (LQR) avec M-estimateur de Cauchy/Tukey.
@@ -12,6 +13,25 @@ import java.util.List;
  * et départs de rues transversales comme des valeurs aberrantes (outliers).
  */
 public class RobustLqrSmoother {
+
+    /**
+     * Résultat immuable du lissage quadratique robuste sur les signaux de résidus 2D (fitX et fitY).
+     *
+     * @param fitX Tableau des résidus lissés en abscisse.
+     * @param fitY Tableau des résidus lissés en ordonnée.
+     */
+    public record LqrResidualResult(double[] fitX, double[] fitY) {
+        /**
+         * Constructeur compact avec validation d'invariants.
+         */
+        public LqrResidualResult {
+            Objects.requireNonNull(fitX, "fitX ne doit pas être nul.");
+            Objects.requireNonNull(fitY, "fitY ne doit pas être nul.");
+            if (fitX.length != fitY.length) {
+                throw new IllegalArgumentException("fitX et fitY doivent avoir la même longueur.");
+            }
+        }
+    }
 
     /**
      * Initialise une nouvelle instance du lisseur quadratique robuste LQR.
@@ -94,14 +114,9 @@ public class RobustLqrSmoother {
             yY[t] = segment.get(t).y() - baseY[t];
         }
 
-        int k = Math.max(1, (int) Math.floor(3.5 * sigma));
-        double[] g = new double[2 * k + 1];
-        for (int u = -k; u <= k; u++) {
-            g[u + k] = Math.exp(-0.5 * (u / sigma) * (u / sigma));
-        }
-
-        double[] fitX = solveLqrIterations(yX, yY, g, k, n, scale, iterations, 0);
-        double[] fitY = solveLqrIterations(yX, yY, g, k, n, scale, iterations, 1);
+        LqrResidualResult fit = smoothResiduals(yX, yY, sigma, scale, iterations);
+        double[] fitX = fit.fitX();
+        double[] fitY = fit.fitY();
 
         List<PixelPoint> result = new ArrayList<>(n);
         result.add(p0);
@@ -111,6 +126,44 @@ public class RobustLqrSmoother {
         result.add(p1);
 
         return Collections.unmodifiableList(result);
+    }
+
+    /**
+     * Lisse directement les signaux de résidus 2D (yX et yY) par régression quadratique locale robuste.
+     *
+     * @param yX         Signal des résidus en abscisse.
+     * @param yY         Signal des résidus en ordonnée.
+     * @param sigma      Écart-type du noyau gaussien (en points/pixels).
+     * @param scale      Échelle de coupure du M-estimateur de Cauchy.
+     * @param iterations Nombre d'itérations de repondération robuste.
+     * @return Résultat contenant les signaux de résidus lissés fitX et fitY.
+     */
+    public LqrResidualResult smoothResiduals(double[] yX, double[] yY, double sigma, double scale, int iterations) {
+        Objects.requireNonNull(yX, "yX ne doit pas être nul.");
+        Objects.requireNonNull(yY, "yY ne doit pas être nul.");
+        int n = yX.length;
+        if (n == 0) {
+            return new LqrResidualResult(new double[0], new double[0]);
+        }
+
+        int k = Math.max(1, (int) Math.floor(3.5 * sigma));
+        double[] g = new double[2 * k + 1];
+        for (int u = -k; u <= k; u++) {
+            g[u + k] = Math.exp(-0.5 * (u / sigma) * (u / sigma));
+        }
+
+        double[] w = new double[n];
+        Arrays.fill(w, 1.0);
+        double[] fitX = Arrays.copyOf(yX, n);
+        double[] fitY = Arrays.copyOf(yY, n);
+
+        for (int it = 0; it < iterations; it++) {
+            fitX = computeLqrPass(yX, w, g, k, n);
+            fitY = computeLqrPass(yY, w, g, k, n);
+            updateRobustWeights(yX, yY, fitX, fitY, w, scale, n);
+        }
+
+        return new LqrResidualResult(fitX, fitY);
     }
 
     /**
@@ -132,39 +185,6 @@ public class RobustLqrSmoother {
             curr = (curr + 1) % n;
         }
         return indices;
-    }
-
-    /**
-     * Résout les itérations de repondération robuste de Cauchy pour une coordonnée donnée (X ou Y).
-     *
-     * @param yX         Signal des résidus en abscisse.
-     * @param yY         Signal des résidus en ordonnée.
-     * @param g          Tableau des poids du noyau gaussien précalculé.
-     * @param k          Demi-fenêtre du noyau LQR.
-     * @param n          Longueur du segment.
-     * @param scale      Échelle du M-estimateur de Cauchy.
-     * @param iterations Nombre d'itérations.
-     * @param coord      Indice de coordonnée (0 pour X, 1 pour Y).
-     * @return Signal lissé estimé pour la coordonnée sélectionnée.
-     */
-    private double[] solveLqrIterations(double[] yX, double[] yY, double[] g, int k, int n,
-                                        double scale, int iterations, int coord) {
-        double[] w = new double[n];
-        Arrays.fill(w, 1.0);
-        double[] fitX = Arrays.copyOf(yX, n);
-        double[] fitY = Arrays.copyOf(yY, n);
-
-        for (int it = 0; it < iterations; it++) {
-            double[] nextFitX = computeLqrPass(yX, w, g, k, n);
-            double[] nextFitY = computeLqrPass(yY, w, g, k, n);
-
-            fitX = nextFitX;
-            fitY = nextFitY;
-
-            updateRobustWeights(yX, yY, fitX, fitY, w, scale, n);
-        }
-
-        return coord == 0 ? fitX : fitY;
     }
 
     /**

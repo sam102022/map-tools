@@ -31,6 +31,43 @@ class ContourDomainModelTest {
         assertEquals(2.0, config.roundaboutZr());
     }
 
+    /**
+     * Vérifie que les hyperparamètres de rectitude du Sprint 7 sont correctement initialisés avec les valeurs étalons.
+     */
+    @Test
+    @DisplayName("ContourSmoothingConfig expose les hyperparamètres de rectitude conformes au Sprint 7")
+    void testContourSmoothingConfigStraightParameters() {
+        ContourSmoothingConfig config = ContourSmoothingConfig.defaultConfig();
+        assertEquals(2.7, config.straightFactor());
+        assertEquals(3.0, config.straightScale());
+        assertEquals(3.0, config.straightThreshold());
+        assertEquals(10, config.straightTransitionK());
+    }
+
+    /**
+     * Vérifie la validation stricte des bornes admissibles des hyperparamètres de rectitude.
+     */
+    @Test
+    @DisplayName("ContourSmoothingConfig rejette les hyperparamètres de rectitude hors bornes")
+    void testContourSmoothingConfigStraightValidation() {
+        assertThrows(IllegalArgumentException.class, () -> new ContourSmoothingConfig(
+                1.0, 80, 38.0, 4.0, 22.0, 3.0, 6, 35.0, 95.0, 2.0,
+                0.5, 3.0, 3.0, 10
+        ));
+        assertThrows(IllegalArgumentException.class, () -> new ContourSmoothingConfig(
+                1.0, 80, 38.0, 4.0, 22.0, 3.0, 6, 35.0, 95.0, 2.0,
+                2.7, 0.0, 3.0, 10
+        ));
+        assertThrows(IllegalArgumentException.class, () -> new ContourSmoothingConfig(
+                1.0, 80, 38.0, 4.0, 22.0, 3.0, 6, 35.0, 95.0, 2.0,
+                2.7, 3.0, -1.0, 10
+        ));
+        assertThrows(IllegalArgumentException.class, () -> new ContourSmoothingConfig(
+                1.0, 80, 38.0, 4.0, 22.0, 3.0, 6, 35.0, 95.0, 2.0,
+                2.7, 3.0, 3.0, 0
+        ));
+    }
+
     @Test
     @DisplayName("EllipseModel convertit rigoureusement entre repère cartésien et cercle unité")
     void testEllipseModelConversions() {

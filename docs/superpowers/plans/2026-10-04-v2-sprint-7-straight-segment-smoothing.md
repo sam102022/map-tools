@@ -1,6 +1,6 @@
 # V2 Sprint 7 — Lissage Adaptatif Multi-Échelle des Tronçons Droits Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Implémenter le lissage LQR multi-échelle adaptatif du Sprint 7 pour redresser les longues avenues et supprimer les encoches d'icônes cartographiques tout en préservant les virages réels, conformément à l'étape 7 de `snap_cells_prototype_v7.py`.
 
@@ -32,7 +32,7 @@
 - Modify: `src/main/java/com/sam102022/photoshop/v2/contour/ContourSmoothingConfig.java`
 - Modify: `src/test/java/com/sam102022/photoshop/v2/contour/ContourDomainModelTest.java`
 
-- [ ] **Step 1: Écrire le test unitaire pour les nouveaux hyperparamètres**
+- [x] **Step 1: Écrire le test unitaire pour les nouveaux hyperparamètres**
 
 Dans `src/test/java/com/sam102022/photoshop/v2/contour/ContourDomainModelTest.java`, ajouter la vérification des champs `straightFactor`, `straightScale`, `straightThreshold`, `straightTransitionK` et de leur validation :
 
@@ -55,12 +55,12 @@ Dans `src/test/java/com/sam102022/photoshop/v2/contour/ContourDomainModelTest.ja
     }
 ```
 
-- [ ] **Step 2: Vérifier l'échec de compilation**
+- [x] **Step 2: Vérifier l'échec de compilation**
 
 Exécuter : `mvn test-compile`  
 Attendu : Erreur de compilation car le constructeur de `ContourSmoothingConfig` n'a pas encore ces paramètres.
 
-- [ ] **Step 3: Implémenter l'enrichissement dans `ContourSmoothingConfig`**
+- [x] **Step 3: Implémenter l'enrichissement dans `ContourSmoothingConfig`**
 
 Mettre à jour `src/main/java/com/sam102022/photoshop/v2/contour/ContourSmoothingConfig.java` :
 - Ajouter les 4 paramètres au record :
@@ -71,7 +71,7 @@ Mettre à jour `src/main/java/com/sam102022/photoshop/v2/contour/ContourSmoothin
 - Mettre à jour `defaultConfig()` avec `(1.0, 80, 38.0, 4.0, 22.0, 3.0, 6, 35.0, 95.0, 2.0, 2.7, 3.0, 3.0, 10)`.
 - Ajouter la Javadoc exhaustive (ADR-014).
 
-- [ ] **Step 4: Mettre à jour les instanciations existantes et vérifier le succès des tests**
+- [x] **Step 4: Mettre à jour les instanciations existantes et vérifier le succès des tests**
 
 Mettre à jour les constructeurs appelés dans les tests existants et exécuter :  
 `mvn test -Dtest=ContourDomainModelTest`  
@@ -85,7 +85,7 @@ Attendu : BUILD SUCCESS.
 - Modify: `src/main/java/com/sam102022/photoshop/v2/contour/RobustLqrSmoother.java`
 - Modify: `src/test/java/com/sam102022/photoshop/v2/contour/RobustLqrSmootherTest.java`
 
-- [ ] **Step 1: Écrire le test unitaire pour `smoothResiduals`**
+- [x] **Step 1: Écrire le test unitaire pour `smoothResiduals`**
 
 Dans `src/test/java/com/sam102022/photoshop/v2/contour/RobustLqrSmootherTest.java`, tester la méthode `smoothResiduals(double[] yX, double[] yY, double sigma, double scale, int iterations)` :
 
@@ -104,12 +104,12 @@ Dans `src/test/java/com/sam102022/photoshop/v2/contour/RobustLqrSmootherTest.jav
     }
 ```
 
-- [ ] **Step 2: Vérifier l'échec du test**
+- [x] **Step 2: Vérifier l'échec du test**
 
 Exécuter : `mvn test-compile`  
 Attendu : Erreur de compilation car `LqrResidualResult` et `smoothResiduals` n'existent pas encore.
 
-- [ ] **Step 3: Implémenter `LqrResidualResult` et `smoothResiduals` dans `RobustLqrSmoother`**
+- [x] **Step 3: Implémenter `LqrResidualResult` et `smoothResiduals` dans `RobustLqrSmoother`**
 
 Dans `RobustLqrSmoother.java` :
 - Déclarer le record public :
@@ -133,7 +133,7 @@ Dans `RobustLqrSmoother.java` :
 - Refactorer `smoothSegment` pour réutiliser `smoothResiduals`.
 - Documenter exhaustivement en Javadoc (ADR-014).
 
-- [ ] **Step 4: Exécuter les tests du lisseur LQR**
+- [x] **Step 4: Exécuter les tests du lisseur LQR**
 
 Exécuter : `mvn test -Dtest=RobustLqrSmootherTest`  
 Attendu : BUILD SUCCESS.
@@ -146,7 +146,7 @@ Attendu : BUILD SUCCESS.
 - Create: `src/main/java/com/sam102022/photoshop/v2/contour/StraightSegmentSmoother.java`
 - Create: `src/test/java/com/sam102022/photoshop/v2/contour/StraightSegmentSmootherTest.java`
 
-- [ ] **Step 1: Écrire les tests unitaires pour `StraightSegmentSmoother`**
+- [x] **Step 1: Écrire les tests unitaires pour `StraightSegmentSmoother`**
 
 Créer `src/test/java/com/sam102022/photoshop/v2/contour/StraightSegmentSmootherTest.java` :
 1. `testStraightLineWithNotchIsStraightened()` :
@@ -158,12 +158,12 @@ Créer `src/test/java/com/sam102022/photoshop/v2/contour/StraightSegmentSmoother
 3. `testShortSegmentReturnsUnchanged()` :
    Segment de longueur $< 2.5 \sigma \to$ retourné intact.
 
-- [ ] **Step 2: Vérifier l'échec des tests**
+- [x] **Step 2: Vérifier l'échec des tests**
 
 Exécuter : `mvn test-compile`  
 Attendu : Échec car la classe n'existe pas.
 
-- [ ] **Step 3: Implémenter `StraightSegmentSmoother`**
+- [x] **Step 3: Implémenter `StraightSegmentSmoother`**
 
 Créer `src/main/java/com/sam102022/photoshop/v2/contour/StraightSegmentSmoother.java` :
 - Méthode `public List<PixelPoint> smoothContour(List<PixelPoint> contour, List<Integer> cornerIndices, ContourSmoothingConfig config)` : partitionne le contour fermé entre les coins et traite chaque segment.
@@ -184,7 +184,7 @@ Créer `src/main/java/com/sam102022/photoshop/v2/contour/StraightSegmentSmoother
   - `assembleSmoothedPoints(...)`
 - Javadoc intégrale en français (ADR-014).
 
-- [ ] **Step 4: Exécuter les tests unitaires**
+- [x] **Step 4: Exécuter les tests unitaires**
 
 Exécuter : `mvn test -Dtest=StraightSegmentSmootherTest`  
 Attendu : BUILD SUCCESS (3/3 tests passants).
@@ -197,11 +197,11 @@ Attendu : BUILD SUCCESS (3/3 tests passants).
 - Modify: `src/main/java/com/sam102022/photoshop/v2/contour/ContourSmoothingEngine.java`
 - Modify: `src/test/java/com/sam102022/photoshop/v2/contour/ContourSmoothingEngineTest.java`
 
-- [ ] **Step 1: Modifier le test de façade `ContourSmoothingEngineTest`**
+- [x] **Step 1: Modifier le test de façade `ContourSmoothingEngineTest`**
 
 Vérifier que `ContourSmoothingEngine` utilise la configuration multi-échelle sans régression.
 
-- [ ] **Step 2: Intégrer `StraightSegmentSmoother` dans `ContourSmoothingEngine`**
+- [x] **Step 2: Intégrer `StraightSegmentSmoother` dans `ContourSmoothingEngine`**
 
 Remplacer l'appel direct de `lqrSmoother.smoothContour(...)` par :
 ```java
@@ -213,7 +213,7 @@ List<PixelPoint> lqrSmoothed = straightSmoother.smoothContour(
 ```
 Tout en conservant les étapes 1, 2, 4, 5, 6, 7 intactes.
 
-- [ ] **Step 3: Exécuter les tests du package contour**
+- [x] **Step 3: Exécuter les tests du package contour**
 
 Exécuter : `mvn test -Dtest="com.sam102022.photoshop.v2.contour.*Test"`  
 Attendu : Tous les tests passent avec succès.
@@ -225,7 +225,7 @@ Attendu : Tous les tests passent avec succès.
 **Files:**
 - Create: `src/test/java/com/sam102022/photoshop/v2/contour/Sprint7IntegrationTest.java`
 
-- [ ] **Step 1: Écrire le test d'intégration `Sprint7IntegrationTest`**
+- [x] **Step 1: Écrire le test d'intégration `Sprint7IntegrationTest`**
 
 Créer le test d'intégration pivot étalon :
 - Charger `01_plan_avec_territoires.json` et `05_style_contraste_sans_rien.png` de CA01.
@@ -236,12 +236,12 @@ Créer le test d'intégration pivot étalon :
   3. Temps d'exécution total du lissage multi-échelle $\le 500\text{ ms}$ ;
   4. Concordance géométrique avec `contour_smooth.npy` de Python V7 (distance de Hausdorff $\le 2.0\text{ px}$ et RMS $\le 0.5\text{ px}$).
 
-- [ ] **Step 2: Exécuter le test d'intégration**
+- [x] **Step 2: Exécuter le test d'intégration**
 
 Exécuter : `mvn test -Dtest=Sprint7IntegrationTest`  
 Attendu : BUILD SUCCESS.
 
-- [ ] **Step 3: Validation globale de non-régression V2**
+- [x] **Step 3: Validation globale de non-régression V2**
 
 Exécuter : `mvn test -Dtest="com.sam102022.photoshop.v2.**"`  
 Attendu : 100% des tests V2 réussis sans avertissement.

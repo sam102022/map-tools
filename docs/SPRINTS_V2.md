@@ -91,7 +91,7 @@ SPRINT 9 (Rendu Sub-Pixel Supersampling SS=4, Export RGBA & CLI V2)
 | **Sprint 4** | Moteur de Vote Topologique & Résolution des Parcelles | ✅ Validé | `v2.vote` | [sprint-4-vote-topologique.md](sprints_v2/sprint-4-vote-topologique.md) |
 | **Sprint 5** | Reconstruction des Frontières Routières & Expansion Géodésique | ✅ Validé | `v2.expansion` | [sprint-5-expansion-geodesique.md](sprints_v2/sprint-5-expansion-geodesique.md) |
 | **Sprint 6** | Géométrie Sub-Pixel, Lissage Robuste LQR & Ronds-points | ✅ Validé | `v2.contour` | [sprint-6-lissage-subpixel-ronds-points.md](sprints_v2/sprint-6-lissage-subpixel-ronds-points.md) |
-| **Sprint 7** | Lissage Adaptatif Multi-Échelle des Tronçons Droits (LQR Élargi) | ⏳ À venir | `v2.contour` | [sprint-7-lissage-troncons-droits.md](sprints_v2/sprint-7-lissage-troncons-droits.md) |
+| **Sprint 7** | Lissage Adaptatif Multi-Échelle des Tronçons Droits (LQR Élargi) | ✅ Validé | `v2.contour` | [sprint-7-lissage-troncons-droits.md](sprints_v2/sprint-7-lissage-troncons-droits.md) |
 | **Sprint 8** | Affinage Spectral de la Couverture Alpha & Anti-Aliasing Réel | ⏳ À venir | `v2.refine` | [sprint-8-affinage-spectral-couverture-alpha.md](sprints_v2/sprint-8-affinage-spectral-couverture-alpha.md) |
 | **Sprint 9** | Rendu Sub-Pixel Supersampling (SS=4), Export RGBA & CLI V2 | ⏳ À venir | `v2.render` / `v2.pipeline` / `cli` | [sprint-9-rendu-supersampling-cli.md](sprints_v2/sprint-9-rendu-supersampling-cli.md) |
 

@@ -13,9 +13,15 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+/**
+ * Tests unitaires de la façade d'orchestration vectorielle {@link ContourSmoothingEngine}.
+ */
 @DisplayName("Tests unitaires de la façade ContourSmoothingEngine")
 class ContourSmoothingEngineTest {
 
+    /**
+     * Vérifie la validation défensive contre les arguments nuls.
+     */
     @Test
     @DisplayName("Lance une exception si un argument obligatoire est nul")
     void testValidationArguments() {
@@ -23,6 +29,29 @@ class ContourSmoothingEngineTest {
         assertThrows(NullPointerException.class, () -> engine.process(null, null, null, null, null, null));
     }
 
+    /**
+     * Vérifie que le constructeur par injection valide les dépendances non nulles.
+     */
+    @Test
+    @DisplayName("Le constructeur par injection valide que les modules spécialisés sont non nuls")
+    void testConstructorDependencyInjection() {
+        assertThrows(NullPointerException.class, () -> new ContourSmoothingEngine(
+                null, new CornerDetector(), new StraightSegmentSmoother(),
+                new CornerPreservationBlender(), new RoundaboutDetector(), new HermiteSplineConnector()
+        ));
+        assertThrows(NullPointerException.class, () -> new ContourSmoothingEngine(
+                new SubpixelContourExtractor(), null, new StraightSegmentSmoother(),
+                new CornerPreservationBlender(), new RoundaboutDetector(), new HermiteSplineConnector()
+        ));
+        assertThrows(NullPointerException.class, () -> new ContourSmoothingEngine(
+                new SubpixelContourExtractor(), new CornerDetector(), null,
+                new CornerPreservationBlender(), new RoundaboutDetector(), new HermiteSplineConnector()
+        ));
+    }
+
+    /**
+     * Vérifie le traitement nominal complet sur un masque carré.
+     */
     @Test
     @DisplayName("Traite un masque carré consolidé avec succès")
     void testProcessSquareMask() {

@@ -34,4 +34,21 @@ class RobustLqrSmootherTest {
         PixelPoint center = smoothed.get(100);
         assertEquals(50.0, center.y(), 2.0, "L'encoche doit être effacée comme valeur aberrante.");
     }
+
+    /**
+     * Vérifie que le lissage de résidus nuls produit des sorties nulles.
+     */
+    @Test
+    @DisplayName("smoothResiduals préserve des résidus strictement nuls")
+    void testSmoothResidualsPreservesZeroResiduals() {
+        RobustLqrSmoother smoother = new RobustLqrSmoother();
+        double[] zeros = new double[50];
+        RobustLqrSmoother.LqrResidualResult result = smoother.smoothResiduals(zeros, zeros, 10.0, 3.0, 4);
+        assertEquals(50, result.fitX().length);
+        assertEquals(50, result.fitY().length);
+        for (int i = 0; i < 50; i++) {
+            assertEquals(0.0, result.fitX()[i], 1e-6);
+            assertEquals(0.0, result.fitY()[i], 1e-6);
+        }
+    }
 }

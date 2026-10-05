@@ -34,13 +34,52 @@ Le projet est régi par les décisions d'architecture (ADR) consignées dans [`d
 | **Sprint 4** | Moteur de Vote Topologique & Résolution des Parcelles | 04/10/2026 | ✅ Validé | `CellState`, `CellSelectionPolicy`, `CellDecision`, `CellSelection`, `CellCoverageCalculator`, `CellClassifier`, `PartialCellResolver`, `TopologicalVoteEngine` |
 | **Sprint 5** | Reconstruction des Frontières Routières & Expansion Géodésique | 04/10/2026 | ✅ Validé | `ExpansionConfig`, `DistanceMap`, `ConsolidatedMask`, `EuclideanDistanceTransform`, `LocalMaxFilter`, `BoundedGeodesicExpander`, `MorphologicalConsolidator`, `ResidualHoleResolver`, `BoundaryRoadPartitioner`, `RoadBoundaryConsolidator` |
 | **Sprint 6** | Géométrie Sub-Pixel, Lissage Robuste LQR & Ronds-points | 04/10/2026 | ✅ Validé | `ContourSmoothingConfig`, `EllipseModel`, `Roundabout`, `SmoothVectorContour`, `AlgebraicEllipseFitter`, `SubpixelContourExtractor`, `CornerDetector`, `RobustLqrSmoother`, `CornerPreservationBlender`, `RoundaboutDetector`, `HermiteSplineConnector`, `ContourSmoothingEngine` |
-| **Sprint 7** | Lissage Adaptatif Multi-Échelle des Tronçons Droits (LQR Élargi) | ⏳ Planifié | En attente | `StraightSegmentSmoother`, `ContourSmoothingConfig` (enrichi), `ContourSmoothingEngine` |
+| **Sprint 7** | Lissage Adaptatif Multi-Échelle des Tronçons Droits (LQR Élargi) | 05/10/2026 | ✅ Validé | `StraightSegmentSmoother`, `ContourSmoothingConfig` (enrichi), `ContourSmoothingEngine` |
 | **Sprint 8** | Affinage Spectral de la Couverture Alpha & Anti-Aliasing Réel | ⏳ Planifié | En attente | `AllowedRegionBuilder`, `SoftThresholdFilter`, `RoundaboutExemptionModulator`, `AlphaRefiner`, `AlphaRefinementConfig`, `AlphaRefinementMap` |
 | **Sprint 9** | Rendu Sub-Pixel Supersampling (SS=4), Export RGBA & CLI V2 | ⏳ Planifié | En attente | `SupersampleRenderer`, `ImageClipper`, `RenderResult`, `V2Config`, `V2Pipeline`, `V2CliRunner` |
 
 ---
 
 ## 📝 3. Entrées Journalières Datées
+
+### Lundi 05 octobre 2026 : Implémentation Complète et Validation Formelle du Sprint 7 V2 (Lissage Adaptatif Multi-Échelle des Tronçons Droits & Double LQR)
+
+*   **Réalisation Opérationnelle des Composants Métier (ADR-008 & ADR-004) :**
+    *   **Enrichissement de `ContourSmoothingConfig` (ADR-004) :** Extension du record immuable avec les 4 hyperparamètres étalonnés sur Python V7 :
+        *   `straightFactor` = 2.7 (facteur multiplicateur de fenêtre pour le lissage large $\sigma_{wide} = 59.4\text{ px}$) ;
+        *   `straightScale` = 3.0 (seuil de coupure Cauchy pour le lissage large) ;
+        *   `straightThreshold` = 3.0 (seuil $\text{ST\_T}$ en pixels pour détecter la rectitude géométrique) ;
+        *   `straightTransitionK` = 10 (demi-largeur de fenêtre du filtre boîte pour transition $C^1$).
+    *   **Exposition de la résolution de résidus dans `RobustLqrSmoother` :**
+        *   Introduction du record public `LqrResidualResult(double[] fitX, double[] fitY)` avec validation d'invariants ;
+        *   Ajout de la méthode publique `smoothResiduals(double[] yX, double[] yY, double sigma, double scale, int iterations)` permettant de résoudre conjointement les composantes X et Y en un seul passage itératif, factorisant et optimisant `smoothSegment`.
+    *   **Composant dédié `StraightSegmentSmoother` (ADR-008, SRP) :**
+        *   Partitionnement circulaire du contour vectoriel entre les coins préservés ;
+        *   Calcul de la corde directrice $P_0 \to P_1$ et extraction des signaux de résidus 2D ;
+        *   Double régression LQR multi-échelle : lissage local fin ($\sigma = 22.0$) et lissage large ($\sigma_{wide} = 59.4$) ;
+        *   Mesure de déviation euclidienne locale $\Delta(t) = \|\mathbf{sm}_b(t) - \mathbf{sm}_a(t)\|$ et calcul du poids brut $w_{\text{raw}}(t) = \text{clamp}\left(\frac{ST\_T - \Delta(t)}{ST\_T / 2}, 0.0, 1.0\right)$ ;
+        *   Transition continue $C^1$ par convolution boîte 1D avec réplication de bord ($k = 10$, moyenne sur 21 points) ;
+        *   Recombinaison linéaire adaptative restaurant la rectitude des avenues tout en absorbant les encoches d'icônes cartographiques (< 0.5 px de déviation).
+    *   **Intégration transparente dans la façade `ContourSmoothingEngine` :**
+        *   Substitution de l'appel LQR simple par le lissage adaptatif multi-échelle via `StraightSegmentSmoother` ;
+        *   Préservation de l'architecture découplée avec injection des dépendances par constructeur (ADR-008).
+*   **Validation d'Intégration Pivot CA01 (`Sprint7IntegrationTest`) :**
+    *   Points de contour vectoriel final : **5 215 points sub-pixels** (pas moyen régulier de 1.0 px).
+    *   Coins majeurs authentiques préservés : **5 coins** (stabilité totale de la géométrie angulaire).
+    *   Temps d'exécution du lissage multi-échelle Sprint 7 : **~228 à 400 ms** (largement en dessous du plafond de 1 000 ms).
+*   **Conformité ADR & Standards d'Ingénierie :**
+    *   ADR-001 (100% Java standard sans dépendances tierces) ;
+    *   ADR-004 (Immutabilité via Records : `ContourSmoothingConfig`, `LqrResidualResult`) ;
+    *   ADR-006 (Spécification et plan d'implémentation documentés avant développement) ;
+    *   ADR-007 (Développement incrémental par sprint) ;
+    *   ADR-008 (Une seule responsabilité par classe - `StraightSegmentSmoother`) ;
+    *   ADR-009 (Logs hiérarchisés en français) ;
+    *   ADR-010 (Suivi journalier) ;
+    *   ADR-011 (Complexité cognitive plafonnée à $\le 15$ par méthode respectée) ;
+    *   ADR-012 (Imports explicites sans FQCN) ;
+    *   ADR-013 (Standardisation timezone) ;
+    *   ADR-014 (Javadoc exhaustive en français sur l'ensemble des types et méthodes).
+*   **Validation globale de la suite V2 :** **112 tests passants sur 112 (100% de succès)**.
 
 ### Dimanche 04 octobre 2026 : Analyse Comparative de `snap_cells_prototype_v7.py` et Décomposition des Sprints 7, 8 et 9 V2
 
@@ -272,8 +311,8 @@ Le projet est régi par les décisions d'architecture (ADR) consignées dans [`d
 ## 🔬 4. État Opérationnel à Date
 
 *   **Suite de tests V2 (`com.sam102022.photoshop.v2.**.*Test`) :**
-    *   **Nombre de tests exécutés :** 103
-    *   **Succès :** 103 (100%)
+    *   **Nombre de tests exécutés :** 112
+    *   **Succès :** 112 (100%)
     *   **Échecs :** 0
     *   **Erreurs :** 0
-*   **Temps d'exécution total de la suite V2 :** ~7.8 s.
+*   **Temps d'exécution total de la suite V2 :** ~8.8 s.

@@ -1,6 +1,6 @@
 # Sprint 7 (V2) — Lissage Adaptatif Multi-Échelle des Tronçons Droits (LQR Élargi)
 
-**Statut :** ⏳ À venir  
+**Statut :** ✅ Validé (05/10/2026)  
 **Package cible :** `com.sam102022.photoshop.v2.contour`  
 **Documents associés :**
 * Spécification de conception : [`docs/superpowers/specs/2026-10-04-v2-sprints-7-8-9-python-v7-alignment-design.md`](../superpowers/specs/2026-10-04-v2-sprints-7-8-9-python-v7-alignment-design.md)

@@ -10,11 +10,11 @@ import java.util.Objects;
 import java.util.logging.Logger;
 
 /**
- * Façade d'orchestration globale de la géométrie vectorielle sub-pixel du Sprint 6.
+ * Façade d'orchestration globale de la géométrie vectorielle sub-pixel (Sprints 6 &amp; 7).
  * Enchaîne séquentiellement :
  * 1. Extraction sub-pixel par Marching Squares 2D et rééchantillonnage 1 px ;
  * 2. Détection multi-échelles des angles vifs (coins) ;
- * 3. Lissage quadratique local LQR robuste (rejet des carrefours) ;
+ * 3. Lissage adaptatif multi-échelle des tronçons droits (Sprint 7, double LQR &amp; transition C1) ;
  * 4. Modulation continue par fondu Hermite smoothstep ;
  * 5. Détection des carrefours giratoires et modélisation des anneaux ;
  * 6. Substitution géométrique des arcs de ronds-points par splines C1 d'Hermite ;
@@ -26,21 +26,47 @@ public class ContourSmoothingEngine {
 
     private final SubpixelContourExtractor contourExtractor;
     private final CornerDetector cornerDetector;
-    private final RobustLqrSmoother lqrSmoother;
+    private final StraightSegmentSmoother straightSmoother;
     private final CornerPreservationBlender preservationBlender;
     private final RoundaboutDetector roundaboutDetector;
     private final HermiteSplineConnector hermiteConnector;
 
     /**
-     * Initialise le moteur avec l'ensemble des modules spécialisés.
+     * Initialise le moteur avec l'ensemble des modules spécialisés par défaut.
      */
     public ContourSmoothingEngine() {
-        this.contourExtractor = new SubpixelContourExtractor();
-        this.cornerDetector = new CornerDetector();
-        this.lqrSmoother = new RobustLqrSmoother();
-        this.preservationBlender = new CornerPreservationBlender();
-        this.roundaboutDetector = new RoundaboutDetector();
-        this.hermiteConnector = new HermiteSplineConnector();
+        this(
+                new SubpixelContourExtractor(),
+                new CornerDetector(),
+                new StraightSegmentSmoother(),
+                new CornerPreservationBlender(),
+                new RoundaboutDetector(),
+                new HermiteSplineConnector()
+        );
+    }
+
+    /**
+     * Initialise le moteur avec injection explicite de ses dépendances spécialisées (ADR-008).
+     *
+     * @param contourExtractor    Extracteur sub-pixel Marching Squares.
+     * @param cornerDetector      Détecteur d'angles vifs.
+     * @param straightSmoother    Lisseur adaptatif multi-échelle des tronçons droits (Sprint 7).
+     * @param preservationBlender Modulateur de fondu de coins.
+     * @param roundaboutDetector  Détecteur de carrefours giratoires.
+     * @param hermiteConnector    Connecteur tangentiel C1.
+     */
+    public ContourSmoothingEngine(SubpixelContourExtractor contourExtractor,
+                                  CornerDetector cornerDetector,
+                                  StraightSegmentSmoother straightSmoother,
+                                  CornerPreservationBlender preservationBlender,
+                                  RoundaboutDetector roundaboutDetector,
+                                  HermiteSplineConnector hermiteConnector) {
+        this.contourExtractor = Objects.requireNonNull(contourExtractor, "L'extracteur de contour ne doit pas être nul.");
+        this.cornerDetector = Objects.requireNonNull(cornerDetector, "Le détecteur de coins ne doit pas être nul.");
+        this.straightSmoother = Objects.requireNonNull(straightSmoother, "Le lisseur de tronçons ne doit pas être nul.");
+        this.preservationBlender = Objects.requireNonNull(preservationBlender, "Le modulateur de coins ne doit pas être nul.");
+        this.roundaboutDetector = Objects.requireNonNull(roundaboutDetector, "Le détecteur de ronds-points ne doit pas être nul.");
+        this.hermiteConnector = Objects.requireNonNull(hermiteConnector, "Le connecteur d'Hermite ne doit pas être nul.");
     }
 
     /**
@@ -67,11 +93,11 @@ public class ContourSmoothingEngine {
         Objects.requireNonNull(territoryMask, "Le masque du territoire ne doit pas être nul.");
         Objects.requireNonNull(config, "La configuration de lissage ne doit pas être nulle.");
 
-        LOGGER.info(() -> "[Sprint 6] Démarrage de l'extraction sub-pixel et du lissage LQR.");
+        LOGGER.info(() -> "[Sprint 7] Démarrage de l'extraction sub-pixel et du lissage multi-échelle.");
 
         // 1. Extraction sub-pixel Marching Squares 2D
         List<PixelPoint> rawContour = contourExtractor.extract(consolidatedMask.mask(), config.resampleStep());
-        LOGGER.info(() -> String.format("[Sprint 6] Contour brut extrait : %d points (pas = %.1f px).",
+        LOGGER.info(() -> String.format("[Sprint 7] Contour brut extrait : %d points (pas = %.1f px).",
                 rawContour.size(), config.resampleStep()));
 
         // 2. Détection des angles vifs
@@ -81,16 +107,15 @@ public class ContourSmoothingEngine {
                 config.cornerThreshold(),
                 config.preSmoothSigma()
         );
-        LOGGER.info(() -> String.format("[Sprint 6] Angles vifs initiaux détectés : %d coins.", initialCorners.size()));
+        LOGGER.info(() -> String.format("[Sprint 7] Angles vifs initiaux détectés : %d coins.", initialCorners.size()));
 
-        // 3. Lissage LQR robuste
-        List<PixelPoint> lqrSmoothed = lqrSmoother.smoothContour(
+        // 3. Lissage adaptatif multi-échelle des tronçons droits (Sprint 7)
+        List<PixelPoint> lqrSmoothed = straightSmoother.smoothContour(
                 rawContour,
                 initialCorners,
-                config.lqrSigma(),
-                config.lqrScale(),
-                config.lqrIterations()
+                config
         );
+        LOGGER.info(() -> "[Sprint 7] Lissage adaptatif multi-échelle appliqué sur les segments.");
 
         // 4. Fondu de préservation des coins
         List<PixelPoint> blended = preservationBlender.blend(
@@ -103,7 +128,7 @@ public class ContourSmoothingEngine {
 
         // 5. Détection des ronds-points
         List<Roundabout> roundabouts = roundaboutDetector.detect(croppedRoad, labelMap, cells, 90.0, 240);
-        LOGGER.info(() -> String.format("[Sprint 6] Ronds-points candidats détectés dans le réseau : %d.", roundabouts.size()));
+        LOGGER.info(() -> String.format("[Sprint 7] Ronds-points candidats détectés dans le réseau : %d.", roundabouts.size()));
 
         // 6. Raccordement tangentiel C1 et substitution d'arcs
         List<PixelPoint> finalPoints = hermiteConnector.integrateRoundabouts(
@@ -121,7 +146,7 @@ public class ContourSmoothingEngine {
                 config.preSmoothSigma()
         );
 
-        LOGGER.info(() -> String.format("[Sprint 6] Pipeline achevé avec succès : %d points finaux, %d coins préservés.",
+        LOGGER.info(() -> String.format("[Sprint 7] Pipeline achevé avec succès : %d points finaux, %d coins préservés.",
                 finalPoints.size(), finalCorners.size()));
 
         return new SmoothVectorContour(
