@@ -14,6 +14,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Tests unitaires de l'orchestrateur de bout en bout {@link V2Pipeline}.
@@ -75,5 +76,20 @@ class V2PipelineTest {
         assertThrows(NullPointerException.class, () -> pipeline.execute(map, geom, null, road, cfg));
         assertThrows(NullPointerException.class, () -> pipeline.execute(map, geom, ctx, (BinaryMask) null, cfg));
         assertThrows(NullPointerException.class, () -> pipeline.execute(map, geom, ctx, road, null));
+    }
+
+    @Test
+    @DisplayName("Rejet des masques routiers aux dimensions incompatibles avec la carte")
+    void testRejectsMismatchedDimensions() {
+        V2Pipeline pipeline = new V2Pipeline();
+        BufferedImage map = new BufferedImage(100, 100, BufferedImage.TYPE_INT_RGB);
+        MapContext ctx = new MapContext(100, 100, 10, new GeoCoordinate(0, 0));
+        TerritoryGeometry geom = new TerritoryGeometry(List.of(List.of(new GeoCoordinate(0, 0))), List.of());
+        BinaryMask roadMismatch = new BinaryMask(50, 50);
+        V2Config cfg = V2Config.defaultConfig();
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> pipeline.execute(map, geom, ctx, roadMismatch, cfg));
+        assertTrue(ex.getMessage().contains("Dimensions incompatibles"));
     }
 }

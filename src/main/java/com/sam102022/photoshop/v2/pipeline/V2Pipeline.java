@@ -239,7 +239,7 @@ public class V2Pipeline {
     }
 
     /**
-     * Valide la présence de tous les arguments obligatoires.
+     * Valide la présence et la cohérence dimensionnelle de tous les arguments obligatoires.
      */
     private void validateInputs(
             BufferedImage mapImage,
@@ -253,5 +253,13 @@ public class V2Pipeline {
         Objects.requireNonNull(mapContext, "mapContext ne doit pas être nul.");
         Objects.requireNonNull(roadMask, "roadMask ne doit pas être nul.");
         Objects.requireNonNull(config, "config ne doit pas être nulle.");
+
+        if (roadMask.getWidth() != mapImage.getWidth() || roadMask.getHeight() != mapImage.getHeight()) {
+            throw new IllegalArgumentException(String.format(
+                    "Dimensions incompatibles entre mapImage (%dx%d) et roadMask (%dx%d).",
+                    mapImage.getWidth(), mapImage.getHeight(),
+                    roadMask.getWidth(), roadMask.getHeight()
+            ));
+        }
     }
 }

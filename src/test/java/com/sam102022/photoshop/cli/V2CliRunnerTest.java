@@ -86,4 +86,58 @@ class V2CliRunnerTest {
         assertTrue(Files.exists(tempDir.resolve("mask.png")));
         assertTrue(Files.exists(tempDir.resolve("overlay.png")));
     }
+
+    @Test
+    @DisplayName("Exécution avec détection et rasterisation automatique d'osm_roads.json adjacent")
+    void testExecutionWithAdjacentOsmRoads(@TempDir Path tempDir) {
+        Path jsonPath = Paths.get("maps/captures_maps/Territoire CA01/01_plan_avec_territoires.json");
+        Path mapPath = Paths.get("maps/captures_maps/Territoire CA01/05_style_contraste_sans_rien.png");
+        Path osmPath = Paths.get("maps/captures_maps/Territoire CA01/osm_roads.json");
+
+        if (!Files.exists(jsonPath) || !Files.exists(mapPath) || !Files.exists(osmPath)) {
+            return;
+        }
+
+        String[] args = new String[]{
+                "--v2",
+                "--map", mapPath.toString(),
+                "--json", jsonPath.toString(),
+                "--out-dir", tempDir.toString()
+        };
+
+        int exitCode = V2CliRunner.run(args);
+        assertEquals(0, exitCode);
+        assertTrue(outContent.toString().contains("Rasterisation automatique des axes routiers OSM")
+                || outContent.toString().contains("OpenStreetMap"));
+        assertTrue(Files.exists(tempDir.resolve("clipped.png")));
+        assertTrue(Files.exists(tempDir.resolve("mask.png")));
+        assertTrue(Files.exists(tempDir.resolve("overlay.png")));
+    }
+
+    @Test
+    @DisplayName("Rejet si le masque routier fourni via --road ne correspond pas aux dimensions de la carte")
+    void testRejectsMismatchedRoadMaskDimensions(@TempDir Path tempDir) throws Exception {
+        Path jsonPath = Paths.get("src/test/resources/v2/fixtures/CA01/01_plan_avec_territoires.json");
+        Path mapPath = Paths.get("src/test/resources/v2/fixtures/CA01/05_style_contraste_sans_rien.png");
+
+        if (!Files.exists(jsonPath) || !Files.exists(mapPath)) {
+            return;
+        }
+
+        Path badRoad = tempDir.resolve("bad_road.png");
+        java.awt.image.BufferedImage smallImg = new java.awt.image.BufferedImage(10, 10, java.awt.image.BufferedImage.TYPE_BYTE_BINARY);
+        javax.imageio.ImageIO.write(smallImg, "png", badRoad.toFile());
+
+        String[] args = new String[]{
+                "--v2",
+                "--map", mapPath.toString(),
+                "--json", jsonPath.toString(),
+                "--road", badRoad.toString(),
+                "--out-dir", tempDir.toString()
+        };
+
+        int exitCode = V2CliRunner.run(args);
+        assertEquals(1, exitCode);
+        assertTrue(errContent.toString().contains("Dimensions incompatibles"));
+    }
 }

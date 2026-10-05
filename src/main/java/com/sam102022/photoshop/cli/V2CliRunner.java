@@ -5,9 +5,11 @@ import com.sam102022.photoshop.core.model.OperationMode;
 import com.sam102022.photoshop.io.ImageExporter;
 import com.sam102022.photoshop.io.ImageLoader;
 import com.sam102022.photoshop.v2.geometry.JsonTerritoryLoader;
+import com.sam102022.photoshop.v2.geometry.MapContext;
 import com.sam102022.photoshop.v2.pipeline.V2Config;
 import com.sam102022.photoshop.v2.pipeline.V2Pipeline;
 import com.sam102022.photoshop.v2.render.RenderResult;
+import com.sam102022.photoshop.v2.road.RoadDetectorOsm;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -59,7 +61,6 @@ public final class V2CliRunner {
     private static int executePipeline(String[] args) throws IOException {
         Path mapPath = resolveMapPath(args);
         Path jsonPath = resolveJsonPath(args);
-        BinaryMask roadMask = resolveRoadMask(args);
 
         System.out.println("-> [V2] Chargement des données sources...");
         BufferedImage mapImg = ImageLoader.load(mapPath);
@@ -67,9 +68,16 @@ public final class V2CliRunner {
         JsonTerritoryLoader loader = new JsonTerritoryLoader();
         JsonTerritoryLoader.LoadedTerritory loaded = loader.load(jsonPath);
 
+        MapContext mapContext = loaded.mapContext();
+        if (mapContext.width() != mapImg.getWidth() || mapContext.height() != mapImg.getHeight()) {
+            mapContext = new MapContext(mapImg.getWidth(), mapImg.getHeight(), mapContext.zoom(), mapContext.center());
+        }
+
+        BinaryMask roadMask = resolveRoadMask(args, mapPath, jsonPath, mapContext, mapImg.getWidth(), mapImg.getHeight());
+
         V2Config config = parseConfig(args);
         V2Pipeline pipeline = new V2Pipeline();
-        RenderResult result = pipeline.execute(mapImg, loaded.geometry(), loaded.mapContext(), roadMask, config);
+        RenderResult result = pipeline.execute(mapImg, loaded.geometry(), mapContext, roadMask, config);
 
         saveOutputs(result, args, mapPath);
         System.out.println("Succès ! Pipeline V2 achevé avec succès.");
@@ -101,24 +109,142 @@ public final class V2CliRunner {
     }
 
     /**
-     * Résout le masque routier à partir de l'option CLI ou du fichier par défaut.
+     * Résout et prépare le masque routier à partir des options CLI, d'OpenStreetMap ou du fallback.
+     *
+     * @param args           Arguments CLI.
+     * @param mapPath        Chemin de l'image source cartographique.
+     * @param jsonPath       Chemin du fichier JSON de cadrage du territoire.
+     * @param mapContext     Contexte géométrique et projection cartographique.
+     * @param expectedWidth  Largeur attendue en pixels.
+     * @param expectedHeight Hauteur attendue en pixels.
+     * @return Masque binaire des axes routiers aux dimensions de la carte.
+     * @throws IOException              en cas d'erreur d'entrée/sortie.
+     * @throws IllegalArgumentException si aucun masque valide n'est trouvé ou si les dimensions sont divergentes.
      */
-    private static BinaryMask resolveRoadMask(String[] args) throws IOException {
+    private static BinaryMask resolveRoadMask(
+            String[] args,
+            Path mapPath,
+            Path jsonPath,
+            MapContext mapContext,
+            int expectedWidth,
+            int expectedHeight
+    ) throws IOException {
+        BinaryMask explicitMask = resolveExplicitRoadMask(args, expectedWidth, expectedHeight);
+        if (explicitMask != null) {
+            return explicitMask;
+        }
+
+        BinaryMask osmMask = resolveOsmRoadMask(args, mapPath, jsonPath, mapContext);
+        if (osmMask != null) {
+            return osmMask;
+        }
+
+        BinaryMask fallbackMask = resolveFallbackRoadMask(expectedWidth, expectedHeight);
+        if (fallbackMask != null) {
+            return fallbackMask;
+        }
+
+        throw new IllegalArgumentException(String.format(
+                "Aucun masque routier compatible trouvé pour les dimensions %dx%d. "
+                        + "Veuillez spécifier un masque bitmap via --road, ou fournir un fichier osm_roads.json via --osm-roads "
+                        + "ou dans le répertoire de la carte.",
+                expectedWidth, expectedHeight
+        ));
+    }
+
+    /**
+     * Tente de charger le masque routier bitmap explicitement passé en argument via --road.
+     */
+    private static BinaryMask resolveExplicitRoadMask(String[] args, int expectedWidth, int expectedHeight) throws IOException {
         String roadPathStr = getOptionValue(args, "--road", null);
-        if (roadPathStr != null && Files.exists(Paths.get(roadPathStr))) {
-            System.out.println("-> [V2] Chargement du masque routier : " + roadPathStr);
-            BufferedImage roadImg = ImageIO.read(Paths.get(roadPathStr).toFile());
-            return BinaryMask.fromImage(roadImg, 128);
+        if (roadPathStr == null) {
+            return null;
         }
 
+        Path roadPath = Paths.get(roadPathStr);
+        if (!Files.exists(roadPath)) {
+            throw new IllegalArgumentException("Le masque routier spécifié n'existe pas : " + roadPath);
+        }
+
+        System.out.println("-> [V2] Chargement du masque routier : " + roadPath);
+        BufferedImage roadImg = ImageIO.read(roadPath.toFile());
+        if (roadImg == null) {
+            throw new IllegalArgumentException("Impossible de décoder l'image du masque routier : " + roadPath);
+        }
+
+        if (roadImg.getWidth() != expectedWidth || roadImg.getHeight() != expectedHeight) {
+            throw new IllegalArgumentException(String.format(
+                    "Dimensions incompatibles pour le masque routier fourni (%dx%d vs %dx%d attendu pour la carte).",
+                    roadImg.getWidth(), roadImg.getHeight(), expectedWidth, expectedHeight
+            ));
+        }
+
+        return BinaryMask.fromImage(roadImg, 128);
+    }
+
+    /**
+     * Tente de détecter et rasteriser les données OpenStreetMap depuis --osm-roads ou un fichier adjacent.
+     */
+    private static BinaryMask resolveOsmRoadMask(
+            String[] args,
+            Path mapPath,
+            Path jsonPath,
+            MapContext mapContext
+    ) throws IOException {
+        Path osmPath = resolveOsmRoadsPath(args, mapPath, jsonPath);
+        if (osmPath == null) {
+            return null;
+        }
+
+        System.out.println("-> [V2] Rasterisation automatique des axes routiers OSM : " + osmPath.toAbsolutePath());
+        RoadDetectorOsm detector = new RoadDetectorOsm();
+        BinaryMask osmMask = detector.detect(osmPath, mapContext);
+        System.out.printf("   %d pixels routiers rasterisés depuis OpenStreetMap.%n", osmMask.countActivePixels());
+        return osmMask;
+    }
+
+    /**
+     * Résout l'emplacement du fichier osm_roads.json.
+     */
+    private static Path resolveOsmRoadsPath(String[] args, Path mapPath, Path jsonPath) {
+        String osmRoadsOption = getOptionValue(args, "--osm-roads", null);
+        if (osmRoadsOption != null) {
+            Path explicitPath = Paths.get(osmRoadsOption);
+            if (!Files.exists(explicitPath)) {
+                throw new IllegalArgumentException("Le fichier OSM spécifié n'existe pas : " + explicitPath);
+            }
+            return explicitPath;
+        }
+
+        Path candidateMap = mapPath.getParent() != null ? mapPath.getParent().resolve("osm_roads.json") : null;
+        if (candidateMap != null && Files.exists(candidateMap)) {
+            return candidateMap;
+        }
+
+        Path candidateJson = jsonPath.getParent() != null ? jsonPath.getParent().resolve("osm_roads.json") : null;
+        if (candidateJson != null && Files.exists(candidateJson)) {
+            return candidateJson;
+        }
+
+        return null;
+    }
+
+    /**
+     * Tente d'utiliser le masque routier par défaut maps/road.png s'il correspond aux dimensions attendues.
+     */
+    private static BinaryMask resolveFallbackRoadMask(int expectedWidth, int expectedHeight) throws IOException {
         Path defaultRoad = Paths.get("maps/road.png");
-        if (Files.exists(defaultRoad)) {
+        if (!Files.exists(defaultRoad)) {
+            return null;
+        }
+
+        BufferedImage roadImg = ImageIO.read(defaultRoad.toFile());
+        if (roadImg != null && roadImg.getWidth() == expectedWidth && roadImg.getHeight() == expectedHeight) {
             System.out.println("-> [V2] Utilisation du masque routier par défaut : " + defaultRoad);
-            BufferedImage roadImg = ImageIO.read(defaultRoad.toFile());
             return BinaryMask.fromImage(roadImg, 128);
         }
 
-        throw new IllegalArgumentException("Aucun masque routier fourni (--road) et maps/road.png introuvable.");
+        return null;
     }
 
     /**
@@ -187,7 +313,8 @@ public final class V2CliRunner {
         out.println("  --json <chemin>        Fichier JSON contenant les polygones et coordonnées cartographiques");
         out.println();
         out.println("Options optionnelles :");
-        out.println("  --road <chemin>        Image du masque routier (défaut : maps/road.png)");
+        out.println("  --road <chemin>        Image du masque routier (défaut : maps/road.png si dimensions conformes)");
+        out.println("  --osm-roads <chemin>   Fichier JSON OpenStreetMap (défaut : osm_roads.json adjacent)");
         out.println("  --out-dir <dossier>    Dossier de destination pour clipped.png, mask.png, overlay.png");
         out.println("  --output <chemin>      Chemin explicite pour l'image détourée clipped.png");
         out.println("  --mask-out <chemin>    Chemin explicite pour le masque monochrome mask.png");

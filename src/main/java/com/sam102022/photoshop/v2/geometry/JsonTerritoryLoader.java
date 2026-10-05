@@ -61,8 +61,12 @@ public final class JsonTerritoryLoader {
         double centerLng = number(center.get("lng"), "map.center.lng");
 
         Map<?, ?> container = asMap(map.get("container"), "map.container");
-        int width = (int) number(container.get("width"), "map.container.width");
-        int height = (int) number(container.get("height"), "map.container.height");
+        int width = container.containsKey("pixelWidth")
+                ? (int) Math.round(number(container.get("pixelWidth"), "map.container.pixelWidth"))
+                : (int) Math.round(number(container.get("width"), "map.container.width"));
+        int height = container.containsKey("pixelHeight")
+                ? (int) Math.round(number(container.get("pixelHeight"), "map.container.pixelHeight"))
+                : (int) Math.round(number(container.get("height"), "map.container.height"));
 
         return new MapContext(width, height, zoom, new GeoCoordinate(centerLat, centerLng));
     }

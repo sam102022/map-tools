@@ -45,6 +45,10 @@ Le projet est régi par les décisions d'architecture (ADR) consignées dans [`d
 ### Lundi 05 octobre 2026 : Implémentation Complète et Validation Formelle du Sprint 9 V2 (Rendu Sub-Pixel Supersampling SS=4, Export RGBA & CLI V2) — Parachèvement de l'Architecture V2
 
 *   **Réalisation Opérationnelle des Composants Métier (ADR-008, ADR-004 & ADR-001) :**
+    *   **Enrichissement Résolution Automatique OSM et Robustesse Dimensionnelle (CLI V2) :**
+        *   **Auto-Détection et Rasterisation OSM (`V2CliRunner`) :** Détection automatique d'un fichier `osm_roads.json` adjacent à la carte source ou au fichier JSON de cadrage, et rasterisation vectorielle à la volée via `RoadDetectorOsm` (Sprint 2) sans exiger de masque routier préalable.
+        *   **Protection et Validation Dimensionnelle (`V2Pipeline` & `V2CliRunner`) :** Validation stricte de concordance dimensionnelle entre `mapImage` et `roadMask` avec messages d'erreur explicites en français.
+        *   **Gestion Robuste du Cadrage Sub-Pixel (`JsonTerritoryLoader`) :** Prise en compte prioritaire de `pixelWidth` / `pixelHeight` et arrondi arithmétique `Math.round` des dimensions flottantes de container (évitant les décalages de 1 px sur les ratios d'écran non entiers).
     *   **Contrat Immuable des Livrables Graphiques (`RenderResult`) :**
         *   Encapsule `clipped` (ARGB 32-bit), `mask` (TYPE_BYTE_GRAY 8-bit), `overlay` (RGB avec frontière rouge #FF0000) et `coverageMask` (`CoverageMask` continu $[0..255]$).
         *   Validation défensive stricte interdisant tout paramètre nul.
@@ -388,8 +392,8 @@ Le projet est régi par les décisions d'architecture (ADR) consignées dans [`d
 ## 🔬 4. État Opérationnel à Date
 
 *   **Suite de tests V2 (`com.sam102022.photoshop.v2.**.*Test,com.sam102022.photoshop.cli.V2CliRunnerTest`) :**
-    *   **Nombre de tests exécutés :** 152
-    *   **Succès :** 152 (100%)
+    *   **Nombre de tests exécutés :** 155
+    *   **Succès :** 155 (100%)
     *   **Échecs :** 0
     *   **Erreurs :** 0
-*   **Temps d'exécution total de la suite V2 :** ~16 s.
+*   **Temps d'exécution total de la suite V2 :** ~20 s.

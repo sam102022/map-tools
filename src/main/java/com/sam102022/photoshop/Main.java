@@ -1,6 +1,6 @@
 package com.sam102022.photoshop;
 
-import com.sam102022.photoshop.cli.CliRunner;
+import com.sam102022.photoshop.cli.V2CliRunner;
 import com.sam102022.photoshop.gui.MainWindow;
 
 import javax.swing.SwingUtilities;
@@ -19,7 +19,7 @@ public class Main {
                 window.setVisible(true);
             });
         } else {
-            int exitCode = CliRunner.run(args);
+            int exitCode = V2CliRunner.run(args);
             if (exitCode != 0) {
                 System.exit(exitCode);
             }
