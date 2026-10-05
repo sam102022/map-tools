@@ -127,7 +127,7 @@ public interface RoadDetector {
 
 Extrait les axes routiers à partir de l'image cartographique contrastée (`05_style_contraste_sans_rien.png`).
 
-* **Règles colorimétriques de référence (issues de `maps/script.py`) :**
+* **Règles colorimétriques de référence (issues de `../../../maps/python/script.py`) :**
   Pour chaque pixel aux coordonnées $(x, y)$, avec $R, G, B \in [0, 255]$ :
   ```text
   isRoad = (B - R >= 12)

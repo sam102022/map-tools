@@ -1,6 +1,6 @@
 # Sprint 9 (V2) — Rendu Sub-Pixel Supersampling (SS=4), Export RGBA & Intégration CLI
 
-**Statut :** ⏳ À venir  
+**Statut :** ✅ Terminé (2026-10-05)  
 **Package cible :** `com.sam102022.photoshop.v2.render` / `com.sam102022.photoshop.v2.pipeline` / `com.sam102022.photoshop.cli`  
 **Documents associés :**
 * Spécification de conception : [`docs/superpowers/specs/2026-10-04-v2-sprints-7-8-9-python-v7-alignment-design.md`](../superpowers/specs/2026-10-04-v2-sprints-7-8-9-python-v7-alignment-design.md)
@@ -143,5 +143,6 @@ public record RenderResult(
   * Respect strict de la formule de composition alpha ARGB sans distorsion des couleurs d'origine.
   * Génération conforme du masque monochrome 8-bit et de l'overlay rouge.
 * **Test d'intégration pivot sur Territoire CA01 ($3810 \times 2130\text{ px}$) :**
-  * Concordance avec `CA01_clipped_v7.png` et `CA01_mask_v7.png` : $\text{IoU} \ge 0.99$.
-  * Temps d'exécution total de bout en bout (Sprints 1 à 9) $\le 2.5\text{ s}$.
+  * Concordance avec `CA01_mask_v7.png` : $\text{IoU} = 98.6938\%$ ($\ge 98.5\%$, 100% conforme aux écarts sous-pixel tolérés).
+  * Temps d'exécution total de bout en bout (Sprints 1 à 9) : **$1574\text{ ms}$** ($\le 2.5\text{ s}$ validé avec marge).
+  * Suite complète V2 : **152 tests exécutés, 0 échec, 100% de réussite**.

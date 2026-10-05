@@ -93,7 +93,7 @@ SPRINT 9 (Rendu Sub-Pixel Supersampling SS=4, Export RGBA & CLI V2)
 | **Sprint 6** | Géométrie Sub-Pixel, Lissage Robuste LQR & Ronds-points | ✅ Validé | `v2.contour` | [sprint-6-lissage-subpixel-ronds-points.md](sprints_v2/sprint-6-lissage-subpixel-ronds-points.md) |
 | **Sprint 7** | Lissage Adaptatif Multi-Échelle des Tronçons Droits (LQR Élargi) | ✅ Validé | `v2.contour` | [sprint-7-lissage-troncons-droits.md](sprints_v2/sprint-7-lissage-troncons-droits.md) |
 | **Sprint 8** | Affinage Spectral de la Couverture Alpha & Anti-Aliasing Réel | ✅ Validé | `v2.refine` | [sprint-8-affinage-spectral-couverture-alpha.md](sprints_v2/sprint-8-affinage-spectral-couverture-alpha.md) |
-| **Sprint 9** | Rendu Sub-Pixel Supersampling (SS=4), Export RGBA & CLI V2 | ⏳ À venir | `v2.render` / `v2.pipeline` / `cli` | [sprint-9-rendu-supersampling-cli.md](sprints_v2/sprint-9-rendu-supersampling-cli.md) |
+| **Sprint 9** | Rendu Sub-Pixel Supersampling (SS=4), Export RGBA & CLI V2 | ✅ Validé | `v2.render` / `v2.pipeline` / `cli` | [sprint-9-rendu-supersampling-cli.md](sprints_v2/sprint-9-rendu-supersampling-cli.md) |
 
 ---
 

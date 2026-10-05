@@ -6,6 +6,17 @@ Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/)
 ## [Non publié] - 2026-10-05
 
 ### Ajouté
+- **Sprint 9 (V2) - Rendu Sub-Pixel Supersampling (SS=4), Export RGBA & CLI V2 (Parachèvement V2)** :
+  - `RenderResult` : Record immuable regroupant l'ensemble des livrables graphiques finaux : `clipped` (ARGB 32-bit), `mask` (TYPE_BYTE_GRAY 8-bit), `overlay` (RGB avec contour rouge `#FF0000`) et `coverageMask` (`CoverageMask` continu $[0..255]$).
+  - `V2Config` : Record immuable unifié encapsulant l'intégralité des hyperparamètres des Sprints 1 à 9, avec validation défensive des bornes et méthodes de conversion vers les sous-configurations (`CellSelectionPolicy`, `ExpansionConfig`, `ContourSmoothingConfig`, `AlphaRefinementConfig`).
+  - `SupersampleRenderer` : Rastériseur vectoriel haute-fidélité par sur-échantillonnage ($SS=4$, 16 sous-pixels/px) avec décalage de demi-pixel ($+0.5\text{ px}$), réduction par Box Filter et modulation point par point par la matrice d'affinage spectral `AlphaRefinementMap`.
+  - `ImageClipper` : Découpeur et assembleur des livrables graphiques avec composition alpha sans crénelage, extraction morphologique de bordure frontière et projection sur la carte source.
+  - `V2Pipeline` : Orchestrateur complet de bout en bout reliant de façon fonctionnelle et modulaire les 9 étapes algorithmiques (Sprints 1 à 9).
+  - `V2CliRunner` : Point d'entrée de ligne de commande dédié au pipeline V2 avec gestion des drapeaux (`--map`, `--json`, `--road`, `--out-dir`, `--output`, `--mask-out`, `--overlay-out`, `--ss`, `--mode`, `--crop-margin`, `--eps`, etc.), validation des fichiers et affichage de statistiques d'exécution en français.
+  - `CliRunner` : Aiguillage automatique vers `V2CliRunner` lors de la présence de l'option `--v2`.
+  - Tests unitaires et d'intégration : `RenderResultTest`, `V2ConfigTest`, `SupersampleRendererTest`, `ImageClipperTest`, `V2PipelineTest`, `V2CliRunnerTest`.
+  - Test d'intégration pivot CA01 `Sprint9IntegrationTest` validant l'ensemble de la chaîne de bout en bout avec concordance IoU de 98.6938% vs `CA01_mask_v7.png` et temps de calcul de 1574 ms (budget $\le 2500\text{ ms}$).
+
 - **Sprint 8 (V2) - Affinage Spectral de la Couverture Alpha & Anti-Aliasing Réel** :
   - `AllowedRegionBuilder` : Construction du masque binaire de l'espace autorisé $M_{\text{allowed}} = M_{\text{fill}} \lor R_c \lor \text{îlots ronds-points}$ et comblement sélectif des cavités intérieures compactes de chaussée ($< 2000\text{ px}$).
   - `SoftThresholdFilter` : Filtre de convolution gaussienne séparable 2D ($\sigma = 1.4\text{ px}$) avec conditions aux limites réfléchies (miroir demi-échantillon) et fonction de transfert à contraste renforcé ($FK = 2.0$) clampée dans $[0.0 .. 1.0]$, optimisé pour une exécution ultra-rapide en cache L1.

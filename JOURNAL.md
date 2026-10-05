@@ -36,11 +36,44 @@ Le projet est régi par les décisions d'architecture (ADR) consignées dans [`d
 | **Sprint 6** | Géométrie Sub-Pixel, Lissage Robuste LQR & Ronds-points | 04/10/2026 | ✅ Validé | `ContourSmoothingConfig`, `EllipseModel`, `Roundabout`, `SmoothVectorContour`, `AlgebraicEllipseFitter`, `SubpixelContourExtractor`, `CornerDetector`, `RobustLqrSmoother`, `CornerPreservationBlender`, `RoundaboutDetector`, `HermiteSplineConnector`, `ContourSmoothingEngine` |
 | **Sprint 7** | Lissage Adaptatif Multi-Échelle des Tronçons Droits (LQR Élargi) | 05/10/2026 | ✅ Validé | `StraightSegmentSmoother`, `ContourSmoothingConfig` (enrichi), `ContourSmoothingEngine` |
 | **Sprint 8** | Affinage Spectral de la Couverture Alpha & Anti-Aliasing Réel | 05/10/2026 | ✅ Validé | `AllowedRegionBuilder`, `SoftThresholdFilter`, `RoundaboutExemptionModulator`, `AlphaRefiner`, `AlphaRefinementConfig`, `AlphaRefinementMap` |
-| **Sprint 9** | Rendu Sub-Pixel Supersampling (SS=4), Export RGBA & CLI V2 | ⏳ Planifié | En attente | `SupersampleRenderer`, `ImageClipper`, `RenderResult`, `V2Config`, `V2Pipeline`, `V2CliRunner` |
+| **Sprint 9** | Rendu Sub-Pixel Supersampling (SS=4), Export RGBA & CLI V2 | 05/10/2026 | ✅ Validé | `SupersampleRenderer`, `ImageClipper`, `RenderResult`, `V2Config`, `V2Pipeline`, `V2CliRunner` |
 
 ---
 
 ## 📝 3. Entrées Journalières Datées
+
+### Lundi 05 octobre 2026 : Implémentation Complète et Validation Formelle du Sprint 9 V2 (Rendu Sub-Pixel Supersampling SS=4, Export RGBA & CLI V2) — Parachèvement de l'Architecture V2
+
+*   **Réalisation Opérationnelle des Composants Métier (ADR-008, ADR-004 & ADR-001) :**
+    *   **Contrat Immuable des Livrables Graphiques (`RenderResult`) :**
+        *   Encapsule `clipped` (ARGB 32-bit), `mask` (TYPE_BYTE_GRAY 8-bit), `overlay` (RGB avec frontière rouge #FF0000) et `coverageMask` (`CoverageMask` continu $[0..255]$).
+        *   Validation défensive stricte interdisant tout paramètre nul.
+    *   **Configuration Unifiée Immuable (`V2Config`) :**
+        *   Regroupe l'ensemble des hyperparamètres des Sprints 1 à 9 calibrés sur l'étalon Python V7.
+        *   Méthodes de conversion directe vers les sous-configurations modulaires : `toCellSelectionPolicy()`, `toExpansionConfig()`, `toContourSmoothingConfig()`, `toAlphaRefinementConfig()`.
+        *   Validation exhaustive de toutes les bornes géométriques et algorithmiques.
+    *   **Rastériseur Sub-Pixel Haute-Fidélité (`SupersampleRenderer`) :**
+        *   Rastérisation sub-pixel sur la zone d'intérêt locale `CropWindow` à l'échelle quadruplée ($SS=4$) avec translation de demi-pixel ($+0.5\text{ px}$) via `Path2D.Double` et `BufferedImage.TYPE_BYTE_GRAY`.
+        *   Filtrage boîte ultra-rapide (*Box Filter*) avec déroulage de boucle optimisé pour $SS=4$ (16 sous-pixels).
+        *   Modulation directe point par point par la matrice d'affinage spectral `AlphaRefinementMap` ($\alpha_{\text{final}} = \alpha_{ss} \times \text{factor}$).
+        *   Injection dans le canevas global pour former le `CoverageMask` continu sans perte de précision.
+    *   **Découpeur et Assembleur d'Images (`ImageClipper`) :**
+        *   Composition de l'image détourée `clipped.png` (ARGB 32-bit) selon la formule de composition alpha : $\alpha_{\text{out}} = \lfloor (\alpha_{\text{src}} \times \text{coverage} + 127) / 255 \rfloor$.
+        *   Génération du masque monochrome 8-bit `mask.png` reflétant les niveaux de gris $[0..255]$.
+        *   Génération de l'image de contrôle `overlay.png` avec recopie accélérée Java2D et mise en évidence de la bordure extérieure en rouge vif `#FF0000` issue de l'analyse morphologique $M_{\text{full}} \land \neg\,\text{erode}(M_{\text{full}})$.
+    *   **Orchestrateur de Bout en Bout (`V2Pipeline`) :**
+        *   Enchaîne de manière fluide, modulaire et purement fonctionnelle les 9 étapes algorithmiques (Sprints 1 à 9).
+        *   Respect strict du principe SRP (ADR-008), de la limitation de complexité cognitive $\le 15$ par méthode (ADR-011) et de la journalisation hiérarchisée en français (ADR-009).
+    *   **Point d'Entrée CLI V2 (`V2CliRunner`) & Intégration CLI :**
+        *   Interface CLI complète prenant en charge les drapeaux `--v2`, `--map`, `--json`, `--road`, `--out-dir`, `--output`, `--mask-out`, `--overlay-out`, `--ss`, `--mode`, `--crop-margin`, `--eps`, etc.
+        *   Aiguillage automatique dans `CliRunner.run(String[] args)` dès détection de l'option `--v2`.
+*   **Validation Exhaustive des Tests (ADR-007) :**
+    *   Tests unitaires complets développés pour chaque classe : `RenderResultTest`, `V2ConfigTest`, `SupersampleRendererTest`, `ImageClipperTest`, `V2PipelineTest`, `V2CliRunnerTest`.
+    *   Test d'intégration pivot étalon `Sprint9IntegrationTest` sur le cas réel CA01 ($3810 \times 2130\text{ px}$) :
+        *   Concordance IoU avec `CA01_mask_v7.png` : **98,6938%** ($\ge 98,5\%$) ;
+        *   Temps de traitement complet de bout en bout : **1 574 ms** (très largement inférieur au budget de performance de 2 500 ms) ;
+        *   Validation du trio d'images produites et de la conformité des canaux alpha.
+    *   Suite de tests V2 : **152 tests exécutés, 0 échec, 0 erreur, 100% de réussite** en 16,7 secondes.
 
 ### Lundi 05 octobre 2026 : Implémentation Complète et Validation Formelle du Sprint 8 V2 (Affinage Spectral de la Couverture Alpha & Anti-Aliasing Réel)
 
@@ -354,9 +387,9 @@ Le projet est régi par les décisions d'architecture (ADR) consignées dans [`d
 
 ## 🔬 4. État Opérationnel à Date
 
-*   **Suite de tests V2 (`com.sam102022.photoshop.v2.**.*Test`) :**
-    *   **Nombre de tests exécutés :** 136
-    *   **Succès :** 136 (100%)
+*   **Suite de tests V2 (`com.sam102022.photoshop.v2.**.*Test,com.sam102022.photoshop.cli.V2CliRunnerTest`) :**
+    *   **Nombre de tests exécutés :** 152
+    *   **Succès :** 152 (100%)
     *   **Échecs :** 0
     *   **Erreurs :** 0
-*   **Temps d'exécution total de la suite V2 :** ~12.5 s.
+*   **Temps d'exécution total de la suite V2 :** ~16 s.

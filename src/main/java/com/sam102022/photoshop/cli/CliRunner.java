@@ -45,6 +45,10 @@ public final class CliRunner {
      * @return Code de retour (0 en cas de succès, 1 en cas d'erreur ou d'aide demandée sans options).
      */
     public static int run(String[] args) {
+        if (args != null && hasOption(args, "--v2")) {
+            return V2CliRunner.run(args);
+        }
+
         if (args == null || args.length == 0 || hasOption(args, "--help", "-h")) {
             printHelp(System.out);
             return (args == null || args.length == 0) ? 1 : 0;
