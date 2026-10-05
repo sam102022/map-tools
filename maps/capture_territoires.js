@@ -5,6 +5,19 @@ const path = require('path');
 const BASE_URL = 'http://localhost/maps/google/';
 const OUTPUT_DIR = path.join(__dirname, 'captures_maps');
 
+/**
+ * Nettoie et génère le chemin absolu du dossier de destination pour un territoire donné.
+ *
+ * @param {string} territoryText Libellé du territoire (ex: "Territoire CA01")
+ * @returns {string} Chemin absolu du répertoire de sortie
+ */
+function getTerritoryDir(territoryText) {
+    const text = String(territoryText || '').trim();
+    let cleanName = text.replace(/[/\\?%*:|"<>]/g, '_');
+    cleanName = cleanName.replace(/n°\s*/gi, '').replace(/[°]/g, '').trim();
+    return path.join(OUTPUT_DIR, cleanName || 'territoire_inconnu');
+}
+
 // Sélecteur du conteneur de la carte Google Maps
 const MAP_SELECTOR = '#map';
 
@@ -261,7 +274,7 @@ const MAP_SELECTOR = '#map';
 
     /**
      * Affiche une barre d'action flottante sur la page et attend la validation utilisateur à l'écran.
-     * Permet d'ajuster le zoom et le cadrage à la souris avant de déclencher les 4 captures.
+     * Permet d'ajuster le zoom et le cadrage à la souris avant de déclencher les 5 captures.
      */
     async function waitForUserOnScreenValidation(territoryName, currentIndex, totalCount) {
         await page.evaluate(({name, index, total}) => {
@@ -305,7 +318,7 @@ const MAP_SELECTOR = '#map';
 
             bar.innerHTML = `
                 <div style="display:flex; flex-direction:column; line-height: 1.2;">
-                    <span style="font-size: 14px; font-weight: bold; color: #fff;">
+                    <span id="pw-territory-title" style="font-size: 14px; font-weight: bold; color: #fff;">
                         📍 [${index}/${total}] ${name}
                     </span>
                     <span style="font-size: 11px; color: #aaa;">
@@ -345,19 +358,46 @@ const MAP_SELECTOR = '#map';
 
             window.__pw_action = null;
 
+            // Écoute des changements de sélection manuelle dans la liste des territoires
+            const territorySelect = document.getElementById('territories');
+            if (territorySelect?._pwChangeHandler) {
+                territorySelect.removeEventListener('change', territorySelect._pwChangeHandler);
+            }
+            const onTerritoryChange = () => {
+                const titleSpan = document.getElementById('pw-territory-title');
+                if (titleSpan && territorySelect && territorySelect.selectedIndex >= 0) {
+                    const selectedText = territorySelect.options[territorySelect.selectedIndex]?.text?.trim();
+                    if (selectedText) {
+                        titleSpan.textContent = `📍 [${index}/${total}] ${selectedText}`;
+                    }
+                }
+            };
+            if (territorySelect) {
+                territorySelect._pwChangeHandler = onTerritoryChange;
+                territorySelect.addEventListener('change', onTerritoryChange);
+            }
+
             const btnCapture = document.getElementById('pw-btn-capture');
             btnCapture.onclick = () => {
                 btnCapture.innerText = '⏳ Captures en cours...';
                 btnCapture.style.background = '#e0a800';
-                window.__pw_action = 'capture';
+                const selectedText = territorySelect && territorySelect.selectedIndex >= 0
+                    ? territorySelect.options[territorySelect.selectedIndex]?.text?.trim()
+                    : name;
+                const selectedValue = territorySelect?.value ?? '';
+                window.__pw_action = {
+                    action: 'capture',
+                    territoryText: selectedText || name,
+                    territoryValue: selectedValue
+                };
             };
 
             document.getElementById('pw-btn-skip').onclick = () => {
-                window.__pw_action = 'skip';
+                window.__pw_action = { action: 'skip' };
             };
 
             document.getElementById('pw-btn-stop').onclick = () => {
-                window.__pw_action = 'stop';
+                window.__pw_action = { action: 'stop' };
             };
         }, {name: territoryName, index: currentIndex, total: totalCount});
 
@@ -365,10 +405,16 @@ const MAP_SELECTOR = '#map';
         const actionHandle = await page.waitForFunction(() => window.__pw_action, null, {timeout: 0});
         const action = await actionHandle.jsonValue();
 
-        // Masquer la barre flottante pour qu'elle ne figure sur aucune capture
+        // Masquer la barre flottante pour qu'elle ne figure sur aucune capture et nettoyer l'écouteur
         await page.evaluate(() => {
             const bar = document.getElementById('pw-floating-bar');
             if (bar) bar.style.display = 'none';
+
+            const territorySelect = document.getElementById('territories');
+            if (territorySelect?._pwChangeHandler) {
+                territorySelect.removeEventListener('change', territorySelect._pwChangeHandler);
+                territorySelect._pwChangeHandler = null;
+            }
         });
 
         return action;
@@ -377,13 +423,6 @@ const MAP_SELECTOR = '#map';
     // 3. Boucle interactive sur chaque territoire
     for (let i = 0; i < options.length; i++) {
         const territory = options[i];
-        let cleanName = territory.text.replace(/[/\\?%*:|"<>]/g, '_');
-        cleanName = cleanName.replace(/[/n°]/g, '');
-        const territoryDir = path.join(OUTPUT_DIR, cleanName);
-
-        if (!fs.existsSync(territoryDir)) {
-            fs.mkdirSync(territoryDir, {recursive: true});
-        }
 
         console.log(`\n[${i + 1}/${options.length}] Territoire : ${territory.text}`);
 
@@ -394,15 +433,30 @@ const MAP_SELECTOR = '#map';
         // Pause interactive : L'utilisateur règle le zoom et le cadrage à l'écran
         const userAction = await waitForUserOnScreenValidation(territory.text, i + 1, options.length);
 
-        if (userAction === 'stop') {
+        const actionType = typeof userAction === 'string' ? userAction : userAction?.action;
+
+        if (actionType === 'stop') {
             console.log('   ⏹️ Arrêt demandé par l\'utilisateur.');
             break;
         }
 
-        if (userAction === 'skip') {
+        if (actionType === 'skip') {
             console.log('   ⏭️ Territoire ignoré par l\'utilisateur.');
             continue;
         }
+
+        // Détermination du territoire effectif (au cas où l'utilisateur a changé la sélection dans la page)
+        const effectiveTerritoryText = userAction?.territoryText || territory.text;
+        const territoryDir = getTerritoryDir(effectiveTerritoryText);
+
+        if (!fs.existsSync(territoryDir)) {
+            fs.mkdirSync(territoryDir, {recursive: true});
+        }
+
+        if (effectiveTerritoryText !== territory.text) {
+            console.log(`   🔄 Territoire modifié manuellement : "${territory.text}" -> "${effectiveTerritoryText}"`);
+        }
+        console.log(`   📂 Dossier cible : ${territoryDir}`);
 
         // --- CAPTURE 1 : Style par défaut ("Plan") + "Afficher territoires" + "Afficher zones" ---
         console.log('   1. Capture : Plan (avec territoires)');
