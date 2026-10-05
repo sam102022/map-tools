@@ -74,6 +74,7 @@ public class RoundaboutDetector {
             if (ringOpt.isPresent()) {
                 FittedRing ring = ringOpt.get();
                 roundabouts.add(new Roundabout(
+                        cell.id(),
                         new PixelPoint(cx, cy),
                         ring.ellipse(),
                         cell.area(),

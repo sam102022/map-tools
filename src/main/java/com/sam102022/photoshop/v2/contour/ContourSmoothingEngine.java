@@ -3,6 +3,7 @@ package com.sam102022.photoshop.v2.contour;
 import com.sam102022.photoshop.core.model.BinaryMask;
 import com.sam102022.photoshop.v2.cell.Cell;
 import com.sam102022.photoshop.v2.cell.CellLabelMap;
+import com.sam102022.photoshop.v2.contour.HermiteSplineConnector.RoundaboutSubstitutionResult;
 import com.sam102022.photoshop.v2.expansion.ConsolidatedMask;
 import com.sam102022.photoshop.v2.geometry.PixelPoint;
 import java.util.List;
@@ -131,12 +132,13 @@ public class ContourSmoothingEngine {
         LOGGER.info(() -> String.format("[Sprint 7] Ronds-points candidats détectés dans le réseau : %d.", roundabouts.size()));
 
         // 6. Raccordement tangentiel C1 et substitution d'arcs
-        List<PixelPoint> finalPoints = hermiteConnector.integrateRoundabouts(
+        RoundaboutSubstitutionResult substitutionResult = hermiteConnector.integrateRoundaboutsWithTracking(
                 blended,
                 roundabouts,
                 territoryMask,
                 config.roundaboutZr()
         );
+        List<PixelPoint> finalPoints = substitutionResult.contour();
 
         // Ré-identification précise des coins sur le tracé final
         List<Integer> finalCorners = cornerDetector.detectCorners(
@@ -146,15 +148,16 @@ public class ContourSmoothingEngine {
                 config.preSmoothSigma()
         );
 
-        LOGGER.info(() -> String.format("[Sprint 7] Pipeline achevé avec succès : %d points finaux, %d coins préservés.",
-                finalPoints.size(), finalCorners.size()));
+        LOGGER.info(() -> String.format("[Sprint 7] Pipeline achevé avec succès : %d points finaux, %d coins préservés, %d ronds-points substitués.",
+                finalPoints.size(), finalCorners.size(), substitutionResult.substitutedRoundabouts().size()));
 
         return new SmoothVectorContour(
                 finalPoints,
                 finalCorners,
                 consolidatedMask.width(),
                 consolidatedMask.height(),
-                consolidatedMask.cropWindow()
+                consolidatedMask.cropWindow(),
+                substitutionResult.substitutedRoundabouts()
         );
     }
 }

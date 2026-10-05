@@ -6,17 +6,31 @@ import java.util.Objects;
 /**
  * Modèle immuable d'un carrefour giratoire détecté.
  *
+ * @param cellId          Identifiant de la cellule topologique d'origine (-1 si non spécifié).
  * @param center          Centroïde de l'îlot central.
  * @param exteriorEllipse Ellipse ajustée sur le bord extérieur de la chaussée.
  * @param islandArea      Surface en pixels de l'îlot central d'origine.
  * @param inlierRatio     Taux de concordance des rayons lors de l'ajustement de l'anneau.
  */
 public record Roundabout(
+        int cellId,
         PixelPoint center,
         EllipseModel exteriorEllipse,
         double islandArea,
         double inlierRatio
 ) {
+
+    /**
+     * Constructeur rétrocompatible sans identifiant de cellule topologique.
+     *
+     * @param center          Centroïde de l'îlot central.
+     * @param exteriorEllipse Ellipse ajustée sur le bord extérieur de la chaussée.
+     * @param islandArea      Surface en pixels de l'îlot central d'origine.
+     * @param inlierRatio     Taux de concordance des rayons lors de l'ajustement de l'anneau.
+     */
+    public Roundabout(PixelPoint center, EllipseModel exteriorEllipse, double islandArea, double inlierRatio) {
+        this(-1, center, exteriorEllipse, islandArea, inlierRatio);
+    }
 
     /**
      * Valide les invariants du rond-point détecté.

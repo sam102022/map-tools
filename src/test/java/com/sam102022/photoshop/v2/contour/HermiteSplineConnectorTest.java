@@ -48,4 +48,24 @@ class HermiteSplineConnectorTest {
             assertTrue(p.x() >= -1.0 && p.x() <= 21.0);
         }
     }
+
+    /**
+     * Vérifie que integrateRoundaboutsWithTracking retourne le contour et la liste des ronds-points substitués.
+     */
+    @Test
+    @DisplayName("integrateRoundaboutsWithTracking renvoie le contour et la liste des ronds-points substitués")
+    void testIntegrateRoundaboutsWithTracking() {
+        HermiteSplineConnector connector = new HermiteSplineConnector();
+        BinaryMask mask = new BinaryMask(100, 100);
+        List<PixelPoint> contour = List.of(
+                new PixelPoint(10, 10),
+                new PixelPoint(20, 10),
+                new PixelPoint(20, 20),
+                new PixelPoint(10, 20)
+        );
+        HermiteSplineConnector.RoundaboutSubstitutionResult result =
+                connector.integrateRoundaboutsWithTracking(contour, List.of(), mask, 2.0);
+        assertEquals(contour, result.contour());
+        assertTrue(result.substitutedRoundabouts().isEmpty());
+    }
 }

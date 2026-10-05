@@ -96,6 +96,21 @@ class ContourDomainModelTest {
         assertNotNull(rb.exteriorEllipse());
     }
 
+    /**
+     * Vérifie la présence de cellId dans Roundabout et la rétrocompatibilité du constructeur à 4 arguments.
+     */
+    @Test
+    @DisplayName("Roundabout stocke cellId et garantit la rétrocompatibilité")
+    void testRoundaboutWithCellIdAndBackwardCompatibility() {
+        EllipseModel ell = new EllipseModel(50.0, 50.0, 20.0, 15.0, 0.0);
+        Roundabout rb1 = new Roundabout(42, new PixelPoint(50.0, 50.0), ell, 250.0, 0.85);
+        assertEquals(42, rb1.cellId());
+
+        // Constructeur rétrocompatible sans cellId (cellId vaut -1 par défaut)
+        Roundabout rb2 = new Roundabout(new PixelPoint(50.0, 50.0), ell, 250.0, 0.85);
+        assertEquals(-1, rb2.cellId());
+    }
+
     @Test
     @DisplayName("SmoothVectorContour garantit l'immuabilité défensive de la liste des points et coins")
     void testSmoothVectorContourImmutability() {
@@ -107,5 +122,29 @@ class ContourDomainModelTest {
         assertEquals(2, contour.points().size());
         assertEquals(1, contour.cornerIndices().size());
         assertThrows(UnsupportedOperationException.class, () -> contour.points().add(new PixelPoint(30, 10)));
+    }
+
+    /**
+     * Vérifie que SmoothVectorContour transporte la liste des ronds-points substitués avec constructeur rétrocompatible.
+     */
+    @Test
+    @DisplayName("SmoothVectorContour transporte la liste des ronds-points substitués")
+    void testSmoothVectorContourCarriesSubstitutedRoundabouts() {
+        CropWindow crop = new CropWindow(0, 0, 100, 100);
+        EllipseModel ell = new EllipseModel(50.0, 50.0, 20.0, 15.0, 0.0);
+        Roundabout rb = new Roundabout(7, new PixelPoint(50.0, 50.0), ell, 250.0, 0.85);
+
+        SmoothVectorContour contourWithRb = new SmoothVectorContour(
+                List.of(new PixelPoint(0, 0), new PixelPoint(10, 0)),
+                List.of(0),
+                100, 100, crop, List.of(rb)
+        );
+        assertEquals(List.of(rb), contourWithRb.substitutedRoundabouts());
+
+        // Constructeur rétrocompatible
+        SmoothVectorContour contourDefault = new SmoothVectorContour(
+                List.of(new PixelPoint(0, 0)), List.of(0), 100, 100, crop
+        );
+        assertTrue(contourDefault.substitutedRoundabouts().isEmpty());
     }
 }

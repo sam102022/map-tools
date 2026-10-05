@@ -5,6 +5,7 @@ import com.sam102022.photoshop.v2.geometry.PixelPoint;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Connecteur tangentiel C1 par splines cubiques d'Hermite et substitution d'arcs de carrefours giratoires.
@@ -91,21 +92,50 @@ public class HermiteSplineConnector {
     }
 
     /**
-     * Intègre les ronds-points détectés dans le contour en substituant l'arc extérieur de l'ellipse.
+     * Résultat de l'intégration et de la substitution d'arcs de carrefours giratoires dans un contour vectoriel.
+     *
+     * @param contour                Points du contour vectoriel après substitution d'arcs.
+     * @param substitutedRoundabouts Liste ordonnée des ronds-points ayant effectivement fait l'objet d'une substitution.
+     */
+    public record RoundaboutSubstitutionResult(
+            List<PixelPoint> contour,
+            List<Roundabout> substitutedRoundabouts
+    ) {
+        /**
+         * Constructeur compact garantissant l'intégrité et l'immuabilité défensive des listes.
+         *
+         * @param contour                Points du contour.
+         * @param substitutedRoundabouts Ronds-points substitués.
+         */
+        public RoundaboutSubstitutionResult {
+            Objects.requireNonNull(contour, "Le contour ne doit pas être nul.");
+            Objects.requireNonNull(substitutedRoundabouts, "La liste des ronds-points ne doit pas être nulle.");
+            contour = List.copyOf(contour);
+            substitutedRoundabouts = List.copyOf(substitutedRoundabouts);
+        }
+    }
+
+    /**
+     * Intègre les ronds-points détectés dans le contour avec traçabilité des ronds-points substitués.
      *
      * @param contour       Contour fermé en cours de traitement.
      * @param roundabouts   Liste des ronds-points détectés.
      * @param territoryMask Masque du territoire retenu (pour tester l'extérieur de l'arc).
      * @param roundaboutZr  Rayon d'influence relatif (typiquement 2.0).
-     * @return Contour vectoriel enrichi des arcs d'ellipses.
+     * @return Résultat contenant le contour enrichi et la liste des ronds-points substitués.
      */
-    public List<PixelPoint> integrateRoundabouts(List<PixelPoint> contour, List<Roundabout> roundabouts,
-                                                 BinaryMask territoryMask, double roundaboutZr) {
+    public RoundaboutSubstitutionResult integrateRoundaboutsWithTracking(
+            List<PixelPoint> contour, List<Roundabout> roundabouts,
+            BinaryMask territoryMask, double roundaboutZr) {
         if (contour == null || roundabouts == null || roundabouts.isEmpty()) {
-            return contour;
+            return new RoundaboutSubstitutionResult(
+                    contour != null ? contour : List.of(),
+                    List.of()
+            );
         }
 
         List<PixelPoint> currentContour = new ArrayList<>(contour);
+        List<Roundabout> substituted = new ArrayList<>();
 
         for (Roundabout rb : roundabouts) {
             EllipseModel ell = rb.exteriorEllipse();
@@ -125,9 +155,24 @@ public class HermiteSplineConnector {
             }
 
             currentContour = spliceRoundaboutArc(currentContour, contact, selectedArc, ell);
+            substituted.add(rb);
         }
 
-        return Collections.unmodifiableList(currentContour);
+        return new RoundaboutSubstitutionResult(currentContour, substituted);
+    }
+
+    /**
+     * Intègre les ronds-points détectés dans le contour en substituant l'arc extérieur de l'ellipse.
+     *
+     * @param contour       Contour fermé en cours de traitement.
+     * @param roundabouts   Liste des ronds-points détectés.
+     * @param territoryMask Masque du territoire retenu (pour tester l'extérieur de l'arc).
+     * @param roundaboutZr  Rayon d'influence relatif (typiquement 2.0).
+     * @return Contour vectoriel enrichi des arcs d'ellipses.
+     */
+    public List<PixelPoint> integrateRoundabouts(List<PixelPoint> contour, List<Roundabout> roundabouts,
+                                                 BinaryMask territoryMask, double roundaboutZr) {
+        return integrateRoundaboutsWithTracking(contour, roundabouts, territoryMask, roundaboutZr).contour();
     }
 
     /**
