@@ -97,7 +97,12 @@ public class SoftThresholdFilter {
     private float[][] convolveHorizontal(BinaryMask mask, float[] kernel, int radius, int width, int height) {
         float[][] temp = new float[height][width];
         for (int y = 0; y < height; y++) {
-            for (int x = 0; x < width; x++) {
+            float[] outRow = temp[y];
+            int leftEnd = Math.min(radius, width);
+            int rightStart = Math.max(radius, width - radius);
+
+            // Zone frontière gauche avec miroir
+            for (int x = 0; x < leftEnd; x++) {
                 float sum = 0.0f;
                 for (int k = -radius; k <= radius; k++) {
                     int rx = reflectIndex(x + k, width);
@@ -105,7 +110,30 @@ public class SoftThresholdFilter {
                         sum += kernel[k + radius];
                     }
                 }
-                temp[y][x] = sum;
+                outRow[x] = sum;
+            }
+
+            // Cœur intérieur direct sans calcul de miroir
+            for (int x = leftEnd; x < rightStart; x++) {
+                float sum = 0.0f;
+                for (int k = -radius; k <= radius; k++) {
+                    if (mask.get(x + k, y)) {
+                        sum += kernel[k + radius];
+                    }
+                }
+                outRow[x] = sum;
+            }
+
+            // Zone frontière droite avec miroir
+            for (int x = rightStart; x < width; x++) {
+                float sum = 0.0f;
+                for (int k = -radius; k <= radius; k++) {
+                    int rx = reflectIndex(x + k, width);
+                    if (mask.get(rx, y)) {
+                        sum += kernel[k + radius];
+                    }
+                }
+                outRow[x] = sum;
             }
         }
         return temp;
@@ -131,15 +159,22 @@ public class SoftThresholdFilter {
             float stiffness
     ) {
         float[][] result = new float[height][width];
-        for (int x = 0; x < width; x++) {
-            for (int y = 0; y < height; y++) {
+        float[][] cachedRows = new float[2 * radius + 1][];
+
+        for (int y = 0; y < height; y++) {
+            for (int k = -radius; k <= radius; k++) {
+                int ry = reflectIndex(y + k, height);
+                cachedRows[k + radius] = temp[ry];
+            }
+
+            float[] outRow = result[y];
+            for (int x = 0; x < width; x++) {
                 float sum = 0.0f;
                 for (int k = -radius; k <= radius; k++) {
-                    int ry = reflectIndex(y + k, height);
-                    sum += kernel[k + radius] * temp[ry][x];
+                    sum += kernel[k + radius] * cachedRows[k + radius][x];
                 }
                 float val = (sum - 0.5f) * stiffness + 0.5f;
-                result[y][x] = clamp(val, 0.0f, 1.0f);
+                outRow[x] = clamp(val, 0.0f, 1.0f);
             }
         }
         return result;
