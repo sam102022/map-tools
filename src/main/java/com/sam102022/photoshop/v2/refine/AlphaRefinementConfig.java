@@ -9,13 +9,18 @@ package com.sam102022.photoshop.v2.refine;
  * @param roundaboutBufferInner Rayon normé interne d'exemption totale autour des ronds-points (FZ0).
  * @param roundaboutBufferOuter Rayon normé externe de transition smoothstep autour des ronds-points (FZ1).
  * @param roadHoleMaxArea       Surface maximale (en pixels) des cavités intérieures du réseau routier à combler.
+ * @param roundaboutShieldEnabled Active le bouclier d'exemption autour des giratoires substitués. Désactivé par
+ *                                défaut : le bouclier conservait le fond blanc pris entre l'arc d'ellipse, les
+ *                                raccords d'Hermite et la chaussée. L'îlot central reste protégé par son
+ *                                inclusion dans la zone autorisée ({@link AllowedRegionBuilder}).
  */
 public record AlphaRefinementConfig(
         double gaussianBlurSigma,
         double contrastStiffness,
         double roundaboutBufferInner,
         double roundaboutBufferOuter,
-        long roadHoleMaxArea
+        long roadHoleMaxArea,
+        boolean roundaboutShieldEnabled
 ) {
 
     /**
@@ -26,6 +31,7 @@ public record AlphaRefinementConfig(
      * @param roundaboutBufferInner Rayon normé interne de protection (doit être &gt; 0).
      * @param roundaboutBufferOuter Rayon normé externe de protection (doit être &gt; roundaboutBufferInner).
      * @param roadHoleMaxArea       Surface maximale des cavités à combler (doit être &ge; 0).
+     * @param roundaboutShieldEnabled Active le bouclier d'exemption des giratoires.
      * @throws IllegalArgumentException si l'un des paramètres est hors bornes.
      */
     public AlphaRefinementConfig {
@@ -44,6 +50,20 @@ public record AlphaRefinementConfig(
         if (roadHoleMaxArea < 0) {
             throw new IllegalArgumentException("roadHoleMaxArea doit être positif ou nul.");
         }
+    }
+
+    /**
+     * Construit une configuration avec le bouclier d'exemption des giratoires désactivé.
+     *
+     * @param gaussianBlurSigma     Écart-type du filtre gaussien.
+     * @param contrastStiffness     Facteur de raideur du contraste.
+     * @param roundaboutBufferInner Rayon normé interne de protection.
+     * @param roundaboutBufferOuter Rayon normé externe de protection.
+     * @param roadHoleMaxArea       Surface maximale des cavités à combler.
+     */
+    public AlphaRefinementConfig(double gaussianBlurSigma, double contrastStiffness,
+                                 double roundaboutBufferInner, double roundaboutBufferOuter, long roadHoleMaxArea) {
+        this(gaussianBlurSigma, contrastStiffness, roundaboutBufferInner, roundaboutBufferOuter, roadHoleMaxArea, false);
     }
 
     /**

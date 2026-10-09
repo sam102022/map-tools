@@ -135,4 +135,61 @@ class StraightSegmentSmootherTest {
         assertNotNull(result);
         assertEquals(n, result.size());
     }
+
+    /**
+     * Construit un contour circulaire fermé bruité de manière déterministe (créneaux de +/- 1.5 px).
+     *
+     * @param n Nombre de points du contour.
+     * @return Contour fermé bruité.
+     */
+    private static List<PixelPoint> noisyCircle(int n) {
+        List<PixelPoint> contour = new ArrayList<>(n);
+        for (int i = 0; i < n; i++) {
+            double t = 2.0 * Math.PI * i / n;
+            double r = 150.0 + (((i / 5) % 2 == 0) ? 1.5 : -1.5);
+            contour.add(new PixelPoint(200.0 + r * Math.cos(t), 200.0 + r * Math.sin(t)));
+        }
+        return contour;
+    }
+
+    /**
+     * Calcule la rugosité moyenne d'un contour fermé (norme moyenne de la dérivée seconde discrète).
+     *
+     * @param contour Contour fermé à évaluer.
+     * @return Rugosité moyenne en pixels.
+     */
+    private static double meanRoughness(List<PixelPoint> contour) {
+        int n = contour.size();
+        double sum = 0.0;
+        for (int i = 0; i < n; i++) {
+            PixelPoint prev = contour.get((i - 1 + n) % n);
+            PixelPoint curr = contour.get(i);
+            PixelPoint next = contour.get((i + 1) % n);
+            sum += Math.hypot(next.x() - 2.0 * curr.x() + prev.x(), next.y() - 2.0 * curr.y() + prev.y());
+        }
+        return sum / n;
+    }
+
+    /**
+     * Régression : un contour sans coin (ou avec un seul coin) doit être lissé sur toute la boucle,
+     * et non laissé brut (segment réduit à un point avant correction).
+     */
+    @Test
+    @DisplayName("Un contour fermé sans coin ou avec un seul coin est lissé sur la boucle complète")
+    void testClosedContourWithZeroOrOneCornerIsSmoothed() {
+        List<PixelPoint> contour = noisyCircle(940);
+        double rawRoughness = meanRoughness(contour);
+        StraightSegmentSmoother smoother = new StraightSegmentSmoother();
+        ContourSmoothingConfig config = ContourSmoothingConfig.defaultConfig();
+
+        List<PixelPoint> noCorner = smoother.smoothContour(contour, List.of(), config);
+        List<PixelPoint> oneCorner = smoother.smoothContour(contour, List.of(300), config);
+
+        assertEquals(contour.size(), noCorner.size());
+        assertEquals(contour.size(), oneCorner.size());
+        assertTrue(meanRoughness(noCorner) < 0.2 * rawRoughness,
+                "Sans coin : rugosité " + meanRoughness(noCorner) + " vs brute " + rawRoughness);
+        assertTrue(meanRoughness(oneCorner) < 0.2 * rawRoughness,
+                "Un coin : rugosité " + meanRoughness(oneCorner) + " vs brute " + rawRoughness);
+    }
 }

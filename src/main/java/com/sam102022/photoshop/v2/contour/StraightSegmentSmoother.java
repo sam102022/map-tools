@@ -235,15 +235,20 @@ public class StraightSegmentSmoother {
      *
      * @param startIdx Indice de départ.
      * @param endIdx   Indice d'arrivée.
+     * Lorsque {@code startIdx == endIdx} (contour sans coin ou avec un seul coin), le segment couvre la
+     * boucle complète et se referme sur son point de départ ({@code n + 1} indices), conformément à
+     * l'étalon Python {@code ids = arange(a, a + N + 1) % N}.
+     *
      * @param n        Nombre total de points du contour fermé.
      * @return Liste ordonnée des indices le long du contour.
      */
     private List<Integer> collectSegmentIndices(int startIdx, int endIdx, int n) {
         List<Integer> indices = new ArrayList<>();
         int curr = startIdx;
+        boolean fullLoop = startIdx == endIdx && n > 1;
         while (true) {
             indices.add(curr);
-            if (curr == endIdx) {
+            if (curr == endIdx && !(fullLoop && indices.size() == 1)) {
                 break;
             }
             curr = (curr + 1) % n;

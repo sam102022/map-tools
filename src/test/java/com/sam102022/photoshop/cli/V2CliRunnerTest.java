@@ -88,7 +88,7 @@ class V2CliRunnerTest {
     }
 
     @Test
-    @DisplayName("Exécution avec détection et rasterisation automatique d'osm_roads.json adjacent")
+    @DisplayName("Exécution avec --road-source osm et osm_roads.json adjacent")
     void testExecutionWithAdjacentOsmRoads(@TempDir Path tempDir) {
         Path jsonPath = Paths.get("maps/captures_maps/Territoire CA01/01_plan_avec_territoires.json");
         Path mapPath = Paths.get("maps/captures_maps/Territoire CA01/05_style_contraste_sans_rien.png");
@@ -102,12 +102,13 @@ class V2CliRunnerTest {
                 "--v2",
                 "--map", mapPath.toString(),
                 "--json", jsonPath.toString(),
+                "--road-source", "osm",
                 "--out-dir", tempDir.toString()
         };
 
         int exitCode = V2CliRunner.run(args);
         assertEquals(0, exitCode);
-        assertTrue(outContent.toString().contains("Rasterisation automatique des axes routiers OSM")
+        assertTrue(outContent.toString().contains("Rasterisation des axes routiers OSM")
                 || outContent.toString().contains("OpenStreetMap"));
         assertTrue(Files.exists(tempDir.resolve("clipped.png")));
         assertTrue(Files.exists(tempDir.resolve("mask.png")));
@@ -139,5 +140,58 @@ class V2CliRunnerTest {
         int exitCode = V2CliRunner.run(args);
         assertEquals(1, exitCode);
         assertTrue(errContent.toString().contains("Dimensions incompatibles"));
+    }
+
+    /**
+     * Sans --road ni option OSM, le masque routier est détecté par colorimétrie sur la carte elle-même
+     * (étalon Python), même si un osm_roads.json est présent à côté de la carte.
+     *
+     * @param tempDir Dossier temporaire de sortie.
+     */
+    @Test
+    @DisplayName("Par défaut, le masque routier est détecté par colorimétrie sur la carte")
+    void testDefaultRoadSourceIsStyleDetection(@TempDir Path tempDir) {
+        Path jsonPath = Paths.get("src/test/resources/v2/fixtures/CA01/01_plan_avec_territoires.json");
+        Path mapPath = Paths.get("src/test/resources/v2/fixtures/CA01/05_style_contraste_sans_rien.png");
+        if (!Files.exists(jsonPath) || !Files.exists(mapPath)) {
+            return;
+        }
+        String[] args = new String[]{
+                "--v2",
+                "--map", mapPath.toString(),
+                "--json", jsonPath.toString(),
+                "--out-dir", tempDir.toString()
+        };
+
+        int exitCode = V2CliRunner.run(args);
+        assertEquals(0, exitCode, errContent.toString());
+        assertTrue(outContent.toString().contains("Détection colorimétrique des routes"));
+        assertTrue(Files.exists(tempDir.resolve("mask.png")));
+    }
+
+    /**
+     * Une valeur inconnue pour --road-source doit être rejetée avec un message explicite.
+     *
+     * @param tempDir Dossier temporaire de sortie.
+     */
+    @Test
+    @DisplayName("Rejet d'une valeur inconnue pour --road-source")
+    void testRejectsUnknownRoadSource(@TempDir Path tempDir) {
+        Path jsonPath = Paths.get("src/test/resources/v2/fixtures/CA01/01_plan_avec_territoires.json");
+        Path mapPath = Paths.get("src/test/resources/v2/fixtures/CA01/05_style_contraste_sans_rien.png");
+        if (!Files.exists(jsonPath) || !Files.exists(mapPath)) {
+            return;
+        }
+        String[] args = new String[]{
+                "--v2",
+                "--map", mapPath.toString(),
+                "--json", jsonPath.toString(),
+                "--road-source", "lidar",
+                "--out-dir", tempDir.toString()
+        };
+
+        int exitCode = V2CliRunner.run(args);
+        assertEquals(1, exitCode);
+        assertTrue(errContent.toString().contains("--road-source"));
     }
 }

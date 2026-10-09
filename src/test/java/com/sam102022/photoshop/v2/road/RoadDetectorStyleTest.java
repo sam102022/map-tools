@@ -73,4 +73,22 @@ class RoadDetectorStyleTest {
         RoadDetectorStyle detector = new RoadDetectorStyle();
         assertThrows(IllegalArgumentException.class, () -> detector.detect(null));
     }
+
+    /**
+     * La teinte autoroute (bleu-gris sombre de l'A811) n'est pas une route ordinaire, mais est détectée par
+     * {@link RoadDetectorStyle#detectMotorways(java.awt.image.BufferedImage)}.
+     */
+    @Test
+    @DisplayName("Détecte la teinte autoroute séparément de la voirie ordinaire")
+    void testMotorwayColourDetectedSeparately() {
+        java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(2, 1, java.awt.image.BufferedImage.TYPE_INT_RGB);
+        img.setRGB(0, 0, (139 << 16) | (165 << 8) | 193);
+        img.setRGB(1, 0, (248 << 16) | (247 << 8) | 247);
+
+        RoadDetectorStyle detector = new RoadDetectorStyle();
+
+        org.junit.jupiter.api.Assertions.assertFalse(RoadDetectorStyle.isRoadColor(139, 165, 193));
+        org.junit.jupiter.api.Assertions.assertTrue(detector.detectMotorways(img).get(0, 0));
+        org.junit.jupiter.api.Assertions.assertFalse(detector.detectMotorways(img).get(1, 0));
+    }
 }

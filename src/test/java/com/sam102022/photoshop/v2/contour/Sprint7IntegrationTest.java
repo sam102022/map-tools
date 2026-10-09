@@ -45,7 +45,7 @@ class Sprint7IntegrationTest {
      * @throws IOException En cas d'erreur de lecture des ressources graphiques ou vectorielles.
      */
     @Test
-    @DisplayName("Pipeline complet Sprint 7 sur CA01 : ~5215 points, 5 coins majeurs, budget < 1000 ms")
+    @DisplayName("Pipeline complet Sprint 7 sur CA01 : 4 à 16 coins, 7 ronds-points substitués (étalon Python), budget < 1000 ms")
     void testEndToEndSprint7OnCA01() throws IOException {
         Path jsonPath = Paths.get("src/test/resources/v2/fixtures/CA01/01_plan_avec_territoires.json");
         if (!Files.exists(jsonPath)) {
@@ -120,10 +120,15 @@ class Sprint7IntegrationTest {
         assertTrue(pointCount >= 5000 && pointCount <= 5400,
                 "Le nombre de points du tracé final doit être compris entre 5000 et 5400 (actuel : " + pointCount + ")");
 
-        // 2. Préservation des coins majeurs : entre 5 et 16 coins
+        // 2. Préservation des coins majeurs : entre 4 et 16 coins
+        // Les 5 sommets majeurs du polygone CA01 sont situés sur des giratoires : l'étalon Python
+        // (snap_cells_prototype_v7.py) y substitue 7 arcs d'ellipse sur 12 giratoires détectés. Un sommet
+        // remplacé par un arc tangent peut ne plus être vu comme un angle vif (L=80) sur le tracé final.
+        assertEquals(7, result.substitutedRoundabouts().size(),
+                "Nombre de ronds-points substitués attendu : 7 (concordance étalon Python)");
         int cornerCount = result.cornerIndices().size();
-        assertTrue(cornerCount >= 5 && cornerCount <= 16,
-                "Le nombre de coins détectés doit être compris entre 5 et 16 (actuel : " + cornerCount + ")");
+        assertTrue(cornerCount >= 4 && cornerCount <= 16,
+                "Le nombre de coins détectés doit être compris entre 4 et 16 (actuel : " + cornerCount + ")");
 
         // 3. Pas moyen de rééchantillonnage proche de 1.0 px
         double avgStep = 0.0;

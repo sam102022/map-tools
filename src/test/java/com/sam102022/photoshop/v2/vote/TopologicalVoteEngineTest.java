@@ -70,8 +70,13 @@ class TopologicalVoteEngineTest {
         assertEquals(1, selection.outsideCellIds().size());
         assertTrue(selection.outsideCellIds().contains(3));
 
-        // Le masque d'amorçage doit contenir 30 (Cell 1) + 10 (Cell 2) = 40 px
-        assertEquals(40, selection.retainedMask().countActivePixels());
+        // Politique par défaut : la bande partielle de Cell 2 (1 px d'épaisseur) est une lamelle
+        // inférieure à 20 px, retirée de T ; seul Cell 1 subsiste (30 px).
+        assertEquals(30, selection.retainedMask().countActivePixels());
+
+        // Filtre désactivé (étalon Python v7) : 30 (Cell 1) + 10 (Cell 2) = 40 px
+        CellSelection legacy = engine.execute(labelMap, cells, polygonMask, new CellSelectionPolicy(0.60, 0.05, 0.0));
+        assertEquals(40, legacy.retainedMask().countActivePixels());
     }
 
     /**

@@ -17,6 +17,12 @@ import java.util.Optional;
  */
 public class RoundaboutDetector {
 
+    /**
+     * Circularité minimale (4πA/P²) de l'îlot central. Un îlot de giratoire est rond (≈ 0,9 mesuré sur CA01/CA02) ;
+     * les îlots triangulaires de carrefour (≈ 0,6) produisaient de faux giratoires et des boucles de contour.
+     */
+    static final double MIN_ISLAND_CIRCULARITY = 0.78;
+
     private final SubpixelContourExtractor contourExtractor;
     private final AlgebraicEllipseFitter ellipseFitter;
 
@@ -132,6 +138,24 @@ public class RoundaboutDetector {
     }
 
     /**
+     * Calcule la circularité isopérimétrique 4πA/P² d'un îlot (1 pour un disque).
+     *
+     * @param area    Aire de l'îlot (px).
+     * @param contour Contour fermé de l'îlot.
+     * @return Circularité dans ]0, 1] (0 si le périmètre est nul).
+     */
+    static double islandCircularity(double area, List<PixelPoint> contour) {
+        double perimeter = 0.0;
+        int n = contour.size();
+        for (int i = 0; i < n; i++) {
+            PixelPoint a = contour.get(i);
+            PixelPoint b = contour.get((i + 1) % n);
+            perimeter += Math.hypot(b.x() - a.x(), b.y() - a.y());
+        }
+        return perimeter > 0.0 ? 4.0 * Math.PI * area / (perimeter * perimeter) : 0.0;
+    }
+
+    /**
      * Valide la géométrie elliptique de l'îlot central selon son élongation et ses résidus RMS.
      *
      * @param cell    Cellule d'origine.
@@ -139,6 +163,9 @@ public class RoundaboutDetector {
      * @return Optional contenant l'ellipse d'îlot validée ou Optional.empty() si non elliptique.
      */
     private Optional<EllipseModel> validateIslandEllipse(Cell cell, List<PixelPoint> contour) {
+        if (islandCircularity(cell.area(), contour) < MIN_ISLAND_CIRCULARITY) {
+            return Optional.empty();
+        }
         Optional<EllipseModel> opt = ellipseFitter.fit(contour);
         if (opt.isEmpty()) {
             return Optional.empty();

@@ -96,11 +96,34 @@ class AlphaRefinerTest {
         EllipseModel ell = new EllipseModel(30.0, 30.0, 10.0, 10.0, 0.0);
         Roundabout rb = new Roundabout(1, new PixelPoint(30.0, 30.0), ell, 80.0, 0.95);
 
-        AlphaRefinementConfig config = AlphaRefinementConfig.defaultConfig();
+        AlphaRefinementConfig config = new AlphaRefinementConfig(1.4, 2.0, 2.3, 3.0, 2000L, true);
         AlphaRefinementMap map = refiner.refine(consolidatedMask, road, labelMap, List.of(rb), config);
 
         assertNotNull(map);
-        // Le centre du rond-point doit être protégé à 1.0f
+        // Bouclier activé : le centre du rond-point est protégé à 1.0f
         assertEquals(1.0f, map.factorAt(30, 30), 1e-4f);
+    }
+
+    /**
+     * Par défaut, le bouclier des giratoires est désactivé : le fond situé hors de la zone autorisée
+     * (ni chaussée, ni territoire consolidé, ni îlot substitué) est retiré même près d'un giratoire.
+     */
+    @Test
+    @DisplayName("Par défaut, le fond hors zone autorisée est retiré même près d'un giratoire substitué")
+    void testDefaultConfigDoesNotShieldRoundaboutSurroundings() {
+        AlphaRefiner refiner = new AlphaRefiner();
+        int w = 60;
+        int h = 60;
+        CropWindow cropWindow = new CropWindow(0, 0, w, h);
+        ConsolidatedMask consolidatedMask = new ConsolidatedMask(w, h, new BinaryMask(w, h), cropWindow);
+        BinaryMask road = new BinaryMask(w, h);
+        CellLabelMap labelMap = new CellLabelMap(w, h, new int[w * h], 0);
+        EllipseModel ell = new EllipseModel(30.0, 30.0, 10.0, 10.0, 0.0);
+        Roundabout rb = new Roundabout(1, new PixelPoint(30.0, 30.0), ell, 80.0, 0.95);
+
+        AlphaRefinementMap map = refiner.refine(consolidatedMask, road, labelMap, List.of(rb),
+                AlphaRefinementConfig.defaultConfig());
+
+        assertEquals(0.0f, map.factorAt(30, 45), 1e-4f, "Le fond blanc proche du giratoire doit être retiré.");
     }
 }

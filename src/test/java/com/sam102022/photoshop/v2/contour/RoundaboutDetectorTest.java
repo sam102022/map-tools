@@ -59,4 +59,28 @@ class RoundaboutDetectorTest {
         assertEquals(roadR, rb.exteriorEllipse().a(), 2.0);
         assertTrue(rb.inlierRatio() >= 0.5);
     }
+
+    /**
+     * La circularité 4πA/P² distingue un îlot de giratoire (disque) d'un îlot triangulaire de carrefour.
+     */
+    @Test
+    @DisplayName("La circularité écarte les îlots triangulaires de carrefour")
+    void testIslandCircularitySeparatesTriangleFromDisk() {
+        java.util.List<com.sam102022.photoshop.v2.geometry.PixelPoint> disk = new java.util.ArrayList<>();
+        for (int i = 0; i < 60; i++) {
+            double t = 2.0 * Math.PI * i / 60;
+            disk.add(new com.sam102022.photoshop.v2.geometry.PixelPoint(10 * Math.cos(t), 10 * Math.sin(t)));
+        }
+        double diskArea = Math.PI * 100.0;
+        java.util.List<com.sam102022.photoshop.v2.geometry.PixelPoint> triangle = java.util.List.of(
+                new com.sam102022.photoshop.v2.geometry.PixelPoint(0, 0),
+                new com.sam102022.photoshop.v2.geometry.PixelPoint(20, 0),
+                new com.sam102022.photoshop.v2.geometry.PixelPoint(0, 12));
+        double triangleArea = 0.5 * 20 * 12;
+
+        org.junit.jupiter.api.Assertions.assertTrue(
+                RoundaboutDetector.islandCircularity(diskArea, disk) > RoundaboutDetector.MIN_ISLAND_CIRCULARITY);
+        org.junit.jupiter.api.Assertions.assertTrue(
+                RoundaboutDetector.islandCircularity(triangleArea, triangle) < RoundaboutDetector.MIN_ISLAND_CIRCULARITY);
+    }
 }

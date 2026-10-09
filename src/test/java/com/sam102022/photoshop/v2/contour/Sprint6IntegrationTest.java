@@ -35,7 +35,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class Sprint6IntegrationTest {
 
     @Test
-    @DisplayName("Pipeline complet Sprint 6 sur CA01 : 10 à 16 coins, 1 rond-point substitué, budget < 1000 ms")
+    @DisplayName("Pipeline complet Sprint 6 sur CA01 : 4 à 16 coins, 7 ronds-points substitués (étalon Python), budget < 1000 ms")
     void testEndToEndSprint6OnCA01() throws IOException {
         Path jsonPath = Paths.get("src/test/resources/v2/fixtures/CA01/01_plan_avec_territoires.json");
         if (!Files.exists(jsonPath)) {
@@ -104,10 +104,15 @@ class Sprint6IntegrationTest {
         System.out.printf("Sprint 6 exécuté en %d ms (total pipeline : %d ms). Points de contour : %d, Coins détectés : %d%n",
                 elapsedSprint6, elapsedTotal, result.points().size(), result.cornerIndices().size());
 
-        // 1. Coins authentiques : 5 à 16 coins (5 coins majeurs à L=80)
+        // 1. Coins authentiques : 4 à 16 coins
+        // Les 5 sommets majeurs du polygone CA01 sont situés sur des giratoires : l'étalon Python
+        // (snap_cells_prototype_v7.py) y substitue 7 arcs d'ellipse sur 12 giratoires détectés. Un sommet
+        // remplacé par un arc tangent peut ne plus être vu comme un angle vif (L=80) sur le tracé final.
+        assertEquals(7, result.substitutedRoundabouts().size(),
+                "Nombre de ronds-points substitués attendu : 7 (concordance étalon Python)");
         int cornerCount = result.cornerIndices().size();
-        assertTrue(cornerCount >= 5 && cornerCount <= 16,
-                "Le nombre de coins détectés doit être compris entre 5 et 16 (actuel : " + cornerCount + ")");
+        assertTrue(cornerCount >= 4 && cornerCount <= 16,
+                "Le nombre de coins détectés doit être compris entre 4 et 16 (actuel : " + cornerCount + ")");
 
         // 2. Pas moyen de rééchantillonnage proche de 1.0 px
         double avgStep = 0.0;

@@ -15,6 +15,13 @@ import java.util.Objects;
 public class HermiteSplineConnector {
 
     /**
+     * Score maximal (proportion de sondes extérieures tombant dans les cellules retenues) pour qu'un arc soit
+     * retenu. Un arc réellement extérieur a un score nul ou presque (mesuré sur CA01/CA02) ; au-delà, les points
+     * de contact sont mal placés (giratoires accolés) et l'arc ferait passer le contour du mauvais côté.
+     */
+    static final double MAX_EXTERIOR_SCORE = 0.3;
+
+    /**
      * Initialise une nouvelle instance du connecteur spline d'Hermite.
      */
     public HermiteSplineConnector() {
@@ -127,6 +134,25 @@ public class HermiteSplineConnector {
     public RoundaboutSubstitutionResult integrateRoundaboutsWithTracking(
             List<PixelPoint> contour, List<Roundabout> roundabouts,
             BinaryMask territoryMask, double roundaboutZr) {
+        return integrateRoundaboutsWithTracking(contour, roundabouts, territoryMask, territoryMask, roundaboutZr);
+    }
+
+    /**
+     * Intègre les ronds-points détectés dans le contour avec traçabilité des ronds-points substitués,
+     * en distinguant le masque utilisé pour le test d'appartenance du disque (étalon Python : {@code Mfill},
+     * le masque consolidé rempli, qui inclut la chaussée de l'anneau) de celui utilisé pour sonder
+     * l'extérieur de l'arc (étalon Python : {@code T}, les cellules retenues).
+     *
+     * @param contour                Contour fermé en cours de traitement.
+     * @param roundabouts            Liste des ronds-points détectés.
+     * @param territoryMask          Masque des cellules retenues (sonde extérieure de l'arc, à 1.12 rayon).
+     * @param consolidatedFilledMask Masque consolidé rempli (test de recouvrement du disque &gt;= 20 %).
+     * @param roundaboutZr           Rayon d'influence relatif (typiquement 2.0).
+     * @return Résultat contenant le contour enrichi et la liste des ronds-points substitués.
+     */
+    public RoundaboutSubstitutionResult integrateRoundaboutsWithTracking(
+            List<PixelPoint> contour, List<Roundabout> roundabouts,
+            BinaryMask territoryMask, BinaryMask consolidatedFilledMask, double roundaboutZr) {
         if (contour == null || roundabouts == null || roundabouts.isEmpty()) {
             return new RoundaboutSubstitutionResult(
                     contour != null ? contour : List.of(),
@@ -134,12 +160,15 @@ public class HermiteSplineConnector {
             );
         }
 
+        Objects.requireNonNull(territoryMask, "Le masque du territoire ne doit pas être nul.");
+        Objects.requireNonNull(consolidatedFilledMask, "Le masque consolidé rempli ne doit pas être nul.");
+
         List<PixelPoint> currentContour = new ArrayList<>(contour);
         List<Roundabout> substituted = new ArrayList<>();
 
         for (Roundabout rb : roundabouts) {
             EllipseModel ell = rb.exteriorEllipse();
-            if (!bordersRoundabout(currentContour, ell) || !intersectsTerritoryDisk(ell, territoryMask)) {
+            if (!bordersRoundabout(currentContour, ell) || !intersectsTerritoryDisk(ell, consolidatedFilledMask)) {
                 continue;
             }
 
@@ -328,7 +357,9 @@ public class HermiteSplineConnector {
             }
         }
 
-        return best;
+        // Aucun des deux arcs ne longe l'extérieur (giratoires accolés, points de contact mal placés) : on conserve
+        // le tracé d'origine plutôt que de faire passer le contour du mauvais côté de l'anneau.
+        return bestScore >= MAX_EXTERIOR_SCORE ? null : best;
     }
 
     /**

@@ -2,6 +2,7 @@ package com.sam102022.photoshop.v2.expansion;
 
 import com.sam102022.photoshop.core.model.BinaryMask;
 import java.util.Objects;
+import java.util.stream.IntStream;
 
 /**
  * Calculateur linéaire en temps O(N) de la transformée de distance euclidienne exacte (EDT).
@@ -14,6 +15,8 @@ public class EuclideanDistanceTransform {
 
     private static final int INF = 1_000_000_000;
     private static final double LARGE_VALUE = 1e12;
+    /** Nombre de lignes par bloc de la passe horizontale parallèle. */
+    private static final int ROWS_PER_BLOCK = 64;
 
     /**
      * Calcule la carte de distance euclidienne exacte sur le masque routier fourni.
@@ -36,7 +39,9 @@ public class EuclideanDistanceTransform {
     }
 
     /**
-     * Effectue la première passe 1D verticale pour chaque colonne indépendamment.
+     * Effectue la première passe 1D verticale (balayages haut-bas puis bas-haut) de toutes les colonnes.
+     * Les colonnes sont traitées simultanément ligne par ligne afin de parcourir la mémoire de façon contiguë
+     * (résultat identique à un traitement colonne par colonne, nettement plus rapide sur les grandes cartes).
      *
      * @param roadMask Masque binaire d'entrée.
      * @param g        Tableau de sortie 1D pour les distances verticales.
@@ -44,47 +49,28 @@ public class EuclideanDistanceTransform {
      * @param height   Hauteur de la grille.
      */
     private void computeVerticalDistances(BinaryMask roadMask, int[] g, int width, int height) {
-        for (int x = 0; x < width; x++) {
-            computeColumnVerticalPass(roadMask, g, x, width, height);
-        }
-    }
-
-    /**
-     * Traite les deux balayages verticaux (haut-bas et bas-haut) pour une colonne donnée.
-     *
-     * @param roadMask Masque binaire d'entrée.
-     * @param g        Tableau des distances verticales.
-     * @param x        Index de colonne courante.
-     * @param width    Largeur de la grille.
-     * @param height   Hauteur de la grille.
-     */
-    private void computeColumnVerticalPass(BinaryMask roadMask, int[] g, int x, int width, int height) {
-        int dist = INF;
         for (int y = 0; y < height; y++) {
-            if (!roadMask.get(x, y)) {
-                dist = 0;
-            } else if (dist < INF) {
-                dist++;
+            int row = y * width;
+            for (int x = 0; x < width; x++) {
+                int above = y == 0 ? INF : g[row - width + x];
+                g[row + x] = !roadMask.get(x, y) ? 0 : (above < INF ? above + 1 : INF);
             }
-            g[y * width + x] = dist;
         }
-
-        dist = INF;
-        for (int y = height - 1; y >= 0; y--) {
-            int idx = y * width + x;
-            if (!roadMask.get(x, y)) {
-                dist = 0;
-            } else if (dist < INF) {
-                dist++;
-            }
-            if (dist < g[idx]) {
-                g[idx] = dist;
+        for (int y = height - 2; y >= 0; y--) {
+            int row = y * width;
+            for (int x = 0; x < width; x++) {
+                int below = g[row + width + x];
+                if (below < INF && below + 1 < g[row + x]) {
+                    g[row + x] = below + 1;
+                }
             }
         }
     }
 
     /**
      * Effectue la seconde passe 1D horizontale pour chaque ligne via l'enveloppe parabolique.
+     * Les lignes étant indépendantes, elles sont réparties en blocs traités en parallèle (chaque bloc
+     * dispose de ses propres tampons ; le résultat est identique au traitement séquentiel).
      *
      * @param roadMask Masque binaire d'entrée.
      * @param g        Distances verticales précalculées.
@@ -93,13 +79,16 @@ public class EuclideanDistanceTransform {
      * @param height   Hauteur de la grille.
      */
     private void computeHorizontalPass(BinaryMask roadMask, int[] g, float[] output, int width, int height) {
-        int[] v = new int[width];
-        double[] z = new double[width + 1];
-        double[] f = new double[width];
-
-        for (int y = 0; y < height; y++) {
-            processRow(y, roadMask, g, output, width, v, z, f);
-        }
+        int blocks = (height + ROWS_PER_BLOCK - 1) / ROWS_PER_BLOCK;
+        IntStream.range(0, blocks).parallel().forEach(block -> {
+            int[] v = new int[width];
+            double[] z = new double[width + 1];
+            double[] f = new double[width];
+            int end = Math.min(height, (block + 1) * ROWS_PER_BLOCK);
+            for (int y = block * ROWS_PER_BLOCK; y < end; y++) {
+                processRow(y, roadMask, g, output, width, v, z, f);
+            }
+        });
     }
 
     /**

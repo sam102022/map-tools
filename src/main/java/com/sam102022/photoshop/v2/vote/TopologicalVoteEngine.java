@@ -102,7 +102,8 @@ public class TopologicalVoteEngine {
                 labelMap,
                 croppedPolygonMask,
                 partition.insideIds(),
-                partition.partialIds()
+                partition.partialIds(),
+                policy.minPartialThickness()
         );
 
         return new CellSelection(

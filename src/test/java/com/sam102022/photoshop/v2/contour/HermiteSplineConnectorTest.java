@@ -68,4 +68,62 @@ class HermiteSplineConnectorTest {
         assertEquals(contour, result.contour());
         assertTrue(result.substitutedRoundabouts().isEmpty());
     }
+
+    /**
+     * Construit un contour rectangulaire fermé échantillonné au pas de 1 px.
+     *
+     * @param x0 Abscisse minimale.
+     * @param y0 Ordonnée minimale.
+     * @param x1 Abscisse maximale.
+     * @param y1 Ordonnée maximale.
+     * @return Contour fermé du rectangle.
+     */
+    private static List<PixelPoint> rectangleContour(int x0, int y0, int x1, int y1) {
+        List<PixelPoint> contour = new ArrayList<>();
+        for (int x = x0; x < x1; x++) {
+            contour.add(new PixelPoint(x, y0));
+        }
+        for (int y = y0; y < y1; y++) {
+            contour.add(new PixelPoint(x1, y));
+        }
+        for (int x = x1; x > x0; x--) {
+            contour.add(new PixelPoint(x, y1));
+        }
+        for (int y = y1; y > y0; y--) {
+            contour.add(new PixelPoint(x0, y));
+        }
+        return contour;
+    }
+
+    /**
+     * Régression : le test de recouvrement du disque (&gt;= 20 %) doit porter sur le masque consolidé rempli
+     * (Mfill de l'étalon Python), qui contient la chaussée de l'anneau, et non sur les seules cellules
+     * retenues (T), qui l'excluent.
+     */
+    @Test
+    @DisplayName("Le recouvrement du disque du giratoire est évalué sur le masque consolidé rempli")
+    void testDiskOverlapUsesConsolidatedFilledMask() {
+        HermiteSplineConnector connector = new HermiteSplineConnector();
+        List<PixelPoint> contour = rectangleContour(10, 0, 60, 100);
+        Roundabout roundabout = new Roundabout(1, new PixelPoint(50, 50),
+                new EllipseModel(50, 50, 10, 10, 0.0), 80.0, 1.0);
+
+        BinaryMask retainedCells = new BinaryMask(100, 100);
+        BinaryMask consolidatedFilled = new BinaryMask(100, 100);
+        for (int y = 0; y < 100; y++) {
+            for (int x = 10; x <= 60; x++) {
+                consolidatedFilled.set(x, y, true);
+            }
+        }
+
+        HermiteSplineConnector.RoundaboutSubstitutionResult withFilled = connector.integrateRoundaboutsWithTracking(
+                contour, List.of(roundabout), retainedCells, consolidatedFilled, 2.0);
+        HermiteSplineConnector.RoundaboutSubstitutionResult withCellsOnly = connector.integrateRoundaboutsWithTracking(
+                contour, List.of(roundabout), retainedCells, 2.0);
+
+        assertEquals(1, withFilled.substitutedRoundabouts().size(),
+                "Le giratoire couvert par Mfill doit être substitué.");
+        assertTrue(withCellsOnly.substitutedRoundabouts().isEmpty(),
+                "Sans chaussée dans le masque, le disque n'atteint pas 20 % de recouvrement.");
+    }
 }

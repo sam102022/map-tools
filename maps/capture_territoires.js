@@ -170,6 +170,85 @@ const MAP_SELECTOR = '#map';
     }
 
     /**
+     * Recherche l'identifiant du type de carte Google dont le nom correspond à l'un des libellés fournis
+     * (insensible à la casse). Permet d'appliquer un style sans connaître son identifiant (ex. "Routes seules").
+     *
+     * @param {string[]} labels Libellés possibles du bouton de style
+     * @returns {Promise<string|null>} Identifiant du type de carte, ou null s'il est introuvable
+     */
+    async function findMapTypeIdByLabel(labels) {
+        return page.evaluate(names => {
+            if (typeof map === 'undefined' || !map.mapTypes) return null;
+            const wanted = names.map(n => n.trim().toLowerCase());
+            const ids = map.get('mapTypeControlOptions')?.mapTypeIds || [];
+            for (const id of ids) {
+                const type = map.mapTypes.get(id);
+                const name = String(type?.name || '').trim().toLowerCase();
+                if (name && wanted.includes(name)) return id;
+            }
+            return null;
+        }, labels);
+    }
+
+    /**
+     * Applique le style "Routes seules" (routes blanches sur fond noir). L'identifiant est recherché par le
+     * libellé du bouton ; à défaut, le bouton est cliqué dans l'interface.
+     *
+     * @returns {Promise<boolean>} true si le style a pu être appliqué
+     */
+    async function setRoadsOnlyStyle() {
+        const labels = ['Routes seules', 'Style routes'];
+        const typeId = await findMapTypeIdByLabel(labels);
+        if (typeId) {
+            const camera = await readMapCamera();
+            await page.evaluate(type => map.setMapTypeId(type), typeId);
+            await restoreMapCamera(camera);
+            console.log(`      Style appliqué : ${typeId}`);
+            return true;
+        }
+        for (const label of labels) {
+            const btn = page.locator(`button:has-text("${label}")`).or(page.locator(`label:has-text("${label}")`));
+            if (await btn.count() > 0) {
+                const camera = await readMapCamera();
+                await btn.first().click({timeout: 1000});
+                await restoreMapCamera(camera);
+                console.log(`      Style appliqué via le bouton "${label}"`);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Masque (ou réaffiche) les contrôles superposés à la carte : barre des styles, zoom, logo, mentions
+     * légales, champ de recherche « Saisir une localisation » (tous les conteneurs de contrôles de .gm-style,
+     * le premier enfant portant les tuiles). Sur la capture "Routes seules", ces éléments clairs seraient lus comme des routes.
+     * Les contrôles sont superposés : les masquer ne déplace pas la carte.
+     *
+     * @param {boolean} hidden true pour masquer, false pour réafficher
+     */
+    async function setMapOverlaysHidden(hidden) {
+        await page.evaluate(hide => {
+            const id = 'pw-hide-map-overlays';
+            let style = document.getElementById(id);
+            if (hide && !style) {
+                style = document.createElement('style');
+                style.id = id;
+                style.textContent = `
+                    #map .gmnoprint, #map .gm-style-cc, #map .gm-control-active,
+                    #map .gm-style-mtc, #map .gm-fullscreen-control,
+                    #map a[href*="maps.google"], #map img[alt="Google"],
+                    #map .gm-style > div:not(:first-child), #map input, #map .pac-container,
+                    .pac-container { visibility: hidden !important; }
+                `;
+                document.head.appendChild(style);
+            } else if (!hide && style) {
+                style.remove();
+            }
+        }, hidden);
+    }
+
+    /**
      * Capture l'intégralité du conteneur de la carte en tenant compte des ascenseurs
      * (équivalent automatique de Screengrab sans coupure ni ascenseurs visibles).
      */
@@ -198,27 +277,98 @@ const MAP_SELECTOR = '#map';
         // exactement au même moment que la capture. Le JSON porte le même nom que
         // l'image afin que RoadSnapper puisse retrouver facilement les métadonnées.
         if (metadataForTerritory) {
-            const metadata = await page.evaluate(() => {
+            const metadata = await page.evaluate(async () => {
                 if (typeof map === 'undefined' || typeof placemarks === 'undefined') {
                     throw new TypeError('La carte Google ou les données KML ne sont pas disponibles.');
                 }
 
                 const territorySelect = document.getElementById('territories');
-                const territoryNumber = territorySelect?.value ?? '';
-                const territory = placemarks.find(placemark => {
-                    const values = placemark?.vars?.val;
-                    return values
-                        && String(values.NUMBER) === String(territoryNumber)
-                        && (!values.ZONE || String(values.ZONE) === '00');
-                });
+                const territoryNumber = String(territorySelect?.value ?? '').trim();
+                const norm = value => String(value ?? '').trim().toUpperCase();
+                // Attributs KML du placemark : format actuel de la page { values, coords } ou format GeoXML3
+                // historique { vars: { val }, Polygon }.
+                const attrs = placemark => placemark?.values ?? placemark?.vars?.val;
+                // Placemark du territoire entier : pas de zone, ou zone "0" / "00" / "000"...
+                const isWholeTerritory = values => !values.ZONE || /^0*$/.test(String(values.ZONE).trim());
+                // Numéro du territoire : champ NUMBER, ou à défaut tout champ KML valant le numéro sélectionné
+                // (ex. "CA02") ou, pour une valeur numérique, le même nombre ("2" = "02").
+                const sameValue = value => {
+                    const a = norm(value);
+                    const b = norm(territoryNumber);
+                    return a !== '' && (a === b || (/^\d+$/.test(a) && /^\d+$/.test(b) && Number(a) === Number(b)));
+                };
+                const sameNumber = placemark => {
+                    const values = attrs(placemark);
+                    if (!values) return false;
+                    if ('NUMBER' in values) return sameValue(values.NUMBER);
+                    return Object.entries(values).some(([key, value]) => key !== 'ZONE' && sameValue(value));
+                };
+                // Repli : numéro sans son préfixe alphabétique ("CA02" ↔ "02" ↔ "2"), utilisé seulement si la
+                // correspondance exacte échoue et s'il désigne un seul territoire entier.
+                const digits = value => norm(value).replace(/^[A-Z]+/, '');
+                const looseNumber = placemark => {
+                    const n = attrs(placemark)?.NUMBER;
+                    return n !== undefined && digits(n) !== '' && /^\d+$/.test(digits(n))
+                        && Number(digits(n)) === Number(digits(territoryNumber));
+                };
+                const findTerritory = () => {
+                    const exact = placemarks.find(placemark =>
+                        sameNumber(placemark) && isWholeTerritory(attrs(placemark)));
+                    if (exact) return exact;
+                    const loose = placemarks.filter(placemark =>
+                        looseNumber(placemark) && isWholeTerritory(attrs(placemark)));
+                    return loose.length === 1 ? loose[0] : undefined;
+                };
 
-                if (!territory) {
-                    throw new Error(`Impossible de trouver le territoire sélectionné (${territoryNumber}).`);
+                // Après un changement manuel de territoire, la page peut recharger ses données KML :
+                // on attend jusqu'à 10 s que le placemark soit disponible.
+                let territory = findTerritory();
+                for (let waited = 0; !territory && waited < 10000; waited += 250) {
+                    await new Promise(resolve => setTimeout(resolve, 250));
+                    territory = typeof placemarks !== 'undefined' ? findTerritory() : null;
                 }
 
-                // GeoXML3 expose les coordonnées KML sous forme d'objets {lat, lng}.
-                // Conserver les anneaux intérieurs permet aussi de représenter d'éventuels trous.
-                const polygons = (territory.Polygon || []).map(polygon => ({
+                if (!territory) {
+                    const candidates = (typeof placemarks !== 'undefined' ? placemarks : [])
+                        .filter(sameNumber)
+                        .map(p => `ZONE=${JSON.stringify(attrs(p).ZONE)} TITLE=${JSON.stringify(attrs(p).TITLE)}`);
+                    // Diagnostic : structure des placemarks chargés (aperçu limité en profondeur et en taille)
+                    const all = typeof placemarks !== 'undefined' ? placemarks : [];
+                    const preview = (obj, depth) => {
+                        if (obj === null || typeof obj !== 'object') {
+                            return typeof obj === 'string' ? obj.slice(0, 60) : obj;
+                        }
+                        if (depth === 0) return Array.isArray(obj) ? `[${obj.length}]` : '{…}';
+                        if (Array.isArray(obj)) return obj.slice(0, 2).map(v => preview(v, depth - 1));
+                        const out = {};
+                        for (const [k, v] of Object.entries(obj).slice(0, 25)) {
+                            if (typeof v !== 'function') out[k] = preview(v, depth - 1);
+                        }
+                        return out;
+                    };
+                    const needle = norm(territoryNumber);
+                    const text = p => { try { return norm(JSON.stringify(preview(p, 3))); } catch { return ''; } };
+                    const similar = all.filter(p => text(p).includes(needle)).slice(0, 3)
+                        .map(p => JSON.stringify(preview(p, 3)).slice(0, 600));
+                    throw new Error(`Impossible de trouver le territoire sélectionné (${territoryNumber}). `
+                        + `${all.length} placemarks chargés ; même numéro : `
+                        + (candidates.length ? candidates.join(' | ') : 'aucun')
+                        + `\n   Premier placemark : ${JSON.stringify(preview(all[0], 3)).slice(0, 800)}`
+                        + `\n   Placemarks mentionnant "${needle}" :\n   ` + (similar.join('\n   ') || 'aucun'));
+                }
+
+                // Format actuel : `coords` = anneau extérieur [{lat, lng}, ...] (ou liste d'anneaux).
+                // Format GeoXML3 : Polygon[].outerBoundaryIs / innerBoundaryIs, avec d'éventuels trous.
+                const toPoint = point => ({
+                    lat: typeof point.lat === 'function' ? point.lat() : point.lat,
+                    lng: typeof point.lng === 'function' ? point.lng() : point.lng
+                });
+                const coordsRings = Array.isArray(territory.coords) && territory.coords.length > 0
+                    ? (Array.isArray(territory.coords[0]) ? territory.coords : [territory.coords])
+                    : null;
+                const polygons = coordsRings
+                    ? [{outerRings: [coordsRings[0].map(toPoint)], innerRings: coordsRings.slice(1).map(r => r.map(toPoint))}]
+                    : (territory.Polygon || []).map(polygon => ({
                     outerRings: (polygon.outerBoundaryIs || []).map(boundary =>
                         (boundary.coordinates || []).map(point => ({lat: point.lat, lng: point.lng}))
                     ),
@@ -239,8 +389,8 @@ const MAP_SELECTOR = '#map';
                     capturedAt: new Date().toISOString(),
                     territory: {
                         number: String(territoryNumber),
-                        title: territory.vars.val.TITLE || '',
-                        locality: territory.vars.val.name || '',
+                        title: attrs(territory).TITLE || '',
+                        locality: attrs(territory).name || '',
                         polygons
                     },
                     map: {
@@ -274,7 +424,7 @@ const MAP_SELECTOR = '#map';
 
     /**
      * Affiche une barre d'action flottante sur la page et attend la validation utilisateur à l'écran.
-     * Permet d'ajuster le zoom et le cadrage à la souris avant de déclencher les 5 captures.
+     * Permet d'ajuster le zoom et le cadrage à la souris avant de déclencher les 6 captures.
      */
     async function waitForUserOnScreenValidation(territoryName, currentIndex, totalCount) {
         await page.evaluate(({name, index, total}) => {
@@ -335,7 +485,7 @@ const MAP_SELECTOR = '#map';
                     border-radius: 25px;
                     cursor: pointer;
                     box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-                ">📸 Lancer les 5 captures</button>
+                ">📸 Lancer les 6 captures</button>
                 <button id="pw-btn-skip" style="
                     background: #495057;
                     color: #fff;
@@ -471,7 +621,7 @@ const MAP_SELECTOR = '#map';
         await setMapStyle('roadmap', 'Plan');
         await takeFullMapScreenshot(path.join(territoryDir, '02_plan_avec_zones.png'), false);
 
-        // Décocher "Afficher territoires" et "Afficher zones" pour les 3 captures suivantes
+        // Décocher "Afficher territoires" et "Afficher zones" pour les 4 captures suivantes
         await setCheckbox('displayTerritories', false);
         await setCheckbox('displayZones', false);
 
@@ -489,6 +639,18 @@ const MAP_SELECTOR = '#map';
         console.log('   5. Capture : Style contrasté sans rien');
         await setMapStyle('styled_map3', 'Style contrasté sans rien');
         await takeFullMapScreenshot(path.join(territoryDir, '05_style_contraste_sans_rien.png'), false);
+
+        // --- CAPTURE 6 : "Routes seules" (routes blanches sur fond noir = masque routier Google) ---
+        // Même cadrage que les captures précédentes ; les contrôles Google superposés sont masqués pour
+        // ne laisser que les routes. Le PNG garde l'anti-crénelage (bord de chaussée sub-pixel).
+        console.log('   6. Capture : Routes seules');
+        if (await setRoadsOnlyStyle()) {
+            await setMapOverlaysHidden(true);
+            await takeFullMapScreenshot(path.join(territoryDir, '06_routes_seules.png'), false);
+            await setMapOverlaysHidden(false);
+        } else {
+            console.warn('      ⚠️ Style "Routes seules" introuvable : capture 6 ignorée.');
+        }
 
         console.log('   Point de départ : Plan (avec territoires)');
         await setCheckbox('displayTerritories', true);

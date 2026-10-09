@@ -5,6 +5,7 @@ import com.sam102022.photoshop.v2.cell.Cell;
 import com.sam102022.photoshop.v2.cell.CellLabelMap;
 import com.sam102022.photoshop.v2.contour.HermiteSplineConnector.RoundaboutSubstitutionResult;
 import com.sam102022.photoshop.v2.expansion.ConsolidatedMask;
+import com.sam102022.photoshop.v2.expansion.ResidualHoleResolver;
 import com.sam102022.photoshop.v2.geometry.PixelPoint;
 import java.util.List;
 import java.util.Objects;
@@ -31,6 +32,7 @@ public class ContourSmoothingEngine {
     private final CornerPreservationBlender preservationBlender;
     private final RoundaboutDetector roundaboutDetector;
     private final HermiteSplineConnector hermiteConnector;
+    private final ResidualHoleResolver filledMaskResolver = new ResidualHoleResolver();
 
     /**
      * Initialise le moteur avec l'ensemble des modules spécialisés par défaut.
@@ -87,6 +89,29 @@ public class ContourSmoothingEngine {
                                        List<Cell> cells,
                                        BinaryMask territoryMask,
                                        ContourSmoothingConfig config) {
+        return process(consolidatedMask, croppedRoad, labelMap, cells, territoryMask, config, true);
+    }
+
+    /**
+     * Exécute la chaîne de lissage, avec ou sans substitution des arcs de giratoires. En mode zone (bord
+     * intérieur des routes), les giratoires frontaliers sont exclus de la zone : aucun arc n'est substitué.
+     *
+     * @param consolidatedMask      Masque consolidé.
+     * @param croppedRoad           Masque routier recadré.
+     * @param labelMap              Étiquettes des cellules.
+     * @param cells                 Cellules.
+     * @param territoryMask         Cellules retenues (T).
+     * @param config                Configuration de lissage.
+     * @param substituteRoundabouts Vrai pour substituer les arcs extérieurs des giratoires frontaliers.
+     * @return Contour vectoriel lissé.
+     */
+    public SmoothVectorContour process(ConsolidatedMask consolidatedMask,
+                                       BinaryMask croppedRoad,
+                                       CellLabelMap labelMap,
+                                       List<Cell> cells,
+                                       BinaryMask territoryMask,
+                                       ContourSmoothingConfig config,
+                                       boolean substituteRoundabouts) {
         Objects.requireNonNull(consolidatedMask, "Le masque consolidé ne doit pas être nul.");
         Objects.requireNonNull(croppedRoad, "Le masque routier ne doit pas être nul.");
         Objects.requireNonNull(labelMap, "La matrice des étiquettes ne doit pas être nulle.");
@@ -128,14 +153,19 @@ public class ContourSmoothingEngine {
         );
 
         // 5. Détection des ronds-points
-        List<Roundabout> roundabouts = roundaboutDetector.detect(croppedRoad, labelMap, cells, 90.0, 240);
+        List<Roundabout> roundabouts = substituteRoundabouts
+                ? roundaboutDetector.detect(croppedRoad, labelMap, cells, 90.0, 240) : List.of();
         LOGGER.info(() -> String.format("[Sprint 7] Ronds-points candidats détectés dans le réseau : %d.", roundabouts.size()));
 
         // 6. Raccordement tangentiel C1 et substitution d'arcs
+        // Le test d'appartenance du disque se fait sur le masque consolidé rempli (Mfill de l'étalon Python),
+        // la sonde extérieure de l'arc sur les cellules retenues (T).
+        BinaryMask consolidatedFilled = filledMaskResolver.fillCompactHoles(consolidatedMask.mask(), Long.MAX_VALUE);
         RoundaboutSubstitutionResult substitutionResult = hermiteConnector.integrateRoundaboutsWithTracking(
                 blended,
                 roundabouts,
                 territoryMask,
+                consolidatedFilled,
                 config.roundaboutZr()
         );
         List<PixelPoint> finalPoints = substitutionResult.contour();

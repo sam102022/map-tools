@@ -107,10 +107,12 @@ public class AlphaRefiner {
                 config.contrastStiffness()
         );
 
-        // 3. Modulation de protection continue des giratoires
+        // 3. Modulation de protection continue des giratoires (optionnelle, désactivée par défaut : sans elle,
+        //    le fond blanc pris entre l'arc d'ellipse, les raccords d'Hermite et la chaussée est retiré)
+        List<Roundabout> shielded = config.roundaboutShieldEnabled() ? substitutedRoundabouts : List.of();
         float[][] finalFactor = exemptionModulator.modulate(
                 rawFactor,
-                substitutedRoundabouts,
+                shielded,
                 config.roundaboutBufferInner(),
                 config.roundaboutBufferOuter()
         );

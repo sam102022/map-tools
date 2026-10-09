@@ -15,6 +15,9 @@ public final class RoadDetectorStyle implements RoadDetector {
     private static final int MIN_DELTA_BLUE_GREEN = 2;
     private static final int MAX_DELTA_BLUE_GREEN = 22;
     private static final int MAX_RED_LUMINANCE = 228;
+    private static final int MIN_MOTORWAY_DELTA_BLUE_RED = 30;
+    private static final int MAX_MOTORWAY_DELTA_BLUE_GREEN = 45;
+    private static final int MAX_MOTORWAY_RED = 190;
 
     /**
      * Initialise une nouvelle instance du détecteur colorimétrique de routes.
@@ -65,9 +68,52 @@ public final class RoadDetectorStyle implements RoadDetector {
     public static boolean isRoadColor(int r, int g, int b) {
         int deltaBlueRed = b - r;
         int deltaBlueGreen = b - g;
-        return deltaBlueRed >= MIN_DELTA_BLUE_RED
+        boolean ordinaryRoad = deltaBlueRed >= MIN_DELTA_BLUE_RED
                 && deltaBlueGreen >= MIN_DELTA_BLUE_GREEN
                 && deltaBlueGreen <= MAX_DELTA_BLUE_GREEN
                 && r < MAX_RED_LUMINANCE;
+        return ordinaryRoad;
+    }
+
+    /**
+     * Détecte les autoroutes (teinte plus sombre que la voirie ordinaire). Elles ne participent pas à la
+     * segmentation en cellules, mais servent de routes longées lorsqu'elles bordent le polygone d'intention.
+     *
+     * @param image Carte source.
+     * @return Masque des pixels d'autoroute.
+     * @throws IllegalArgumentException si l'image est null.
+     */
+    public BinaryMask detectMotorways(BufferedImage image) {
+        if (image == null) {
+            throw new IllegalArgumentException("L'image cartographique ne peut pas être null.");
+        }
+        int width = image.getWidth();
+        int height = image.getHeight();
+        int[] pixels = image.getRGB(0, 0, width, height, null, 0, width);
+        boolean[] maskData = new boolean[width * height];
+        for (int i = 0; i < pixels.length; i++) {
+            int r = (pixels[i] >>> 16) & 0xFF;
+            int g = (pixels[i] >>> 8) & 0xFF;
+            int b = pixels[i] & 0xFF;
+            maskData[i] = isMotorwayColor(r, b - r, b - g);
+        }
+        return new BinaryMask(width, height, maskData);
+    }
+
+    /**
+     * Teinte des autoroutes du style contrasté : bleu-gris plus sombre et plus saturé que la voirie ordinaire
+     * (par exemple RVB 139/165/193 ou 121/147/185 sur l'A811, Territoire CA02), hors de la plage B - V de la
+     * voirie ordinaire.
+     *
+     * @param r              Composante rouge.
+     * @param deltaBlueRed   Écart B - R.
+     * @param deltaBlueGreen Écart B - V.
+     * @return true pour un pixel d'autoroute.
+     */
+    static boolean isMotorwayColor(int r, int deltaBlueRed, int deltaBlueGreen) {
+        return deltaBlueRed >= MIN_MOTORWAY_DELTA_BLUE_RED
+                && deltaBlueGreen > MAX_DELTA_BLUE_GREEN
+                && deltaBlueGreen <= MAX_MOTORWAY_DELTA_BLUE_GREEN
+                && r < MAX_MOTORWAY_RED;
     }
 }

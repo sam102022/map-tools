@@ -24,7 +24,7 @@ class V2ConfigTest {
         V2Config config = V2Config.defaultConfig();
 
         assertNotNull(config);
-        assertEquals(0.60, config.hi(), 1e-6);
+        assertEquals(0.80, config.hi(), 1e-6);
         assertEquals(0.05, config.lo(), 1e-6);
         assertEquals(90, config.cropMargin());
 
@@ -60,7 +60,7 @@ class V2ConfigTest {
         V2Config config = V2Config.defaultConfig();
 
         CellSelectionPolicy policy = config.toCellSelectionPolicy();
-        assertEquals(0.60, policy.insideThreshold(), 1e-6);
+        assertEquals(0.80, policy.insideThreshold(), 1e-6);
         assertEquals(0.05, policy.partialThreshold(), 1e-6);
 
         ExpansionConfig expConfig = config.toExpansionConfig();

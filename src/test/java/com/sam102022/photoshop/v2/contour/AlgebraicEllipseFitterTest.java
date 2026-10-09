@@ -49,6 +49,35 @@ class AlgebraicEllipseFitterTest {
         assertTrue(fitted.a() >= fitted.b(), "L'invariant a >= b doit être respecté");
     }
 
+    /**
+     * Vérifie que l'orientation theta est correcte quel que soit le quadrant du grand axe.
+     * Régression : pour un grand axe proche de l'horizontale, theta était décalé de π/2.
+     */
+    @Test
+    @DisplayName("Restitue l'orientation theta (modulo π) pour toutes les inclinaisons du grand axe")
+    void testFitOrientationAllQuadrants() {
+        AlgebraicEllipseFitter fitter = new AlgebraicEllipseFitter();
+        double[] thetas = {0.0, 0.3, -0.4, 0.78, 1.2, 1.57, 2.0, 2.9};
+        for (double expectedTheta : thetas) {
+            List<PixelPoint> points = new ArrayList<>();
+            for (int i = 0; i < 60; i++) {
+                double phi = 2.0 * Math.PI * i / 60;
+                double u = 30.0 * Math.cos(phi);
+                double v = 12.0 * Math.sin(phi);
+                points.add(new PixelPoint(
+                        80.0 + u * Math.cos(expectedTheta) - v * Math.sin(expectedTheta),
+                        60.0 + u * Math.sin(expectedTheta) + v * Math.cos(expectedTheta)));
+            }
+            EllipseModel fitted = fitter.fit(points).orElseThrow();
+            double delta = Math.floorMod(Math.round((fitted.theta() - expectedTheta) * 1e9), Math.round(Math.PI * 1e9)) / 1e9;
+            double angularError = Math.min(delta, Math.PI - delta);
+            assertEquals(0.0, angularError, 1e-6, "theta attendu " + expectedTheta + ", obtenu " + fitted.theta());
+            for (PixelPoint p : points) {
+                assertEquals(0.0, fitter.distanceToEllipse(p, fitted), 1e-6, "Résidu nul attendu pour theta=" + expectedTheta);
+            }
+        }
+    }
+
     @Test
     @DisplayName("Retourne Optional.empty() si le nuage de points est insuffisant ou colinéaire")
     void testDegeneratePoints() {

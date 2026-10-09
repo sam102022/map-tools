@@ -356,10 +356,10 @@ public class AlgebraicEllipseFitter {
 
         double w = Math.sqrt(num / den1);
         double h = Math.sqrt(num / den2);
-        double phi = 0.5 * Math.atan2(2.0 * bCoeff, aCoeff - cCoeff);
-        if (aCoeff > cCoeff) {
-            phi += 0.5 * Math.PI;
-        }
+        // Orientation de l'axe associé à w (forme a*x² + 2b*xy + c*y²) : la direction propre de la plus
+        // petite courbure est à 0.5*atan2(2b, a-c) + π/2. Le quadrant est porté par atan2 : aucune
+        // correction supplémentaire selon le signe de (a - c) ne doit être appliquée.
+        double phi = 0.5 * Math.atan2(2.0 * bCoeff, aCoeff - cCoeff) + 0.5 * Math.PI;
         if (w < h) {
             double temp = w;
             w = h;

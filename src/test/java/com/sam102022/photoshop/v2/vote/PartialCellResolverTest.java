@@ -177,4 +177,36 @@ class PartialCellResolverTest {
         assertNotNull(result.partialMasks());
         assertThrows(UnsupportedOperationException.class, () -> result.partialMasks().put(2, new BinaryMask(5, 5)));
     }
+
+    /**
+     * Une lamelle partielle plus fine que le seuil est retirée de T et du masque partiel, alors que la
+     * surcharge historique (sans seuil) la conserve.
+     */
+    @Test
+    @DisplayName("Retire de T les lamelles partielles plus fines que minPartialThickness")
+    void testResolveRemovesThinPartialSliver() {
+        int width = 100;
+        int height = 100;
+        int[] labels = new int[width * height];
+        java.util.Arrays.fill(labels, 1);
+        CellLabelMap labelMap = new CellLabelMap(width, height, labels, 1);
+
+        // Le polygone ne recouvre qu'une bande intérieure de 10 px de la cellule partielle
+        BinaryMask polygonMask = new BinaryMask(width, height);
+        for (int y = 0; y < height; y++) {
+            for (int x = 40; x < 50; x++) {
+                polygonMask.set(x, y, true);
+            }
+        }
+
+        PartialCellResolver resolver = new PartialCellResolver();
+        PartialCellResolver.ResolutionResult legacy = resolver.resolve(labelMap, polygonMask, Set.of(), Set.of(1));
+        PartialCellResolver.ResolutionResult filtered = resolver.resolve(labelMap, polygonMask, Set.of(), Set.of(1), 20.0);
+
+        assertEquals(1000L, legacy.retainedMask().countActivePixels(), "Sans seuil, la lamelle est conservée.");
+        assertEquals(0L, filtered.retainedMask().countActivePixels(), "La lamelle de 10 px doit être retirée de T.");
+        assertEquals(0L, filtered.partialMasks().get(1).countActivePixels(), "Le masque partiel doit être vidé.");
+        assertThrows(IllegalArgumentException.class,
+                () -> resolver.resolve(labelMap, polygonMask, Set.of(), Set.of(1), -1.0));
+    }
 }
