@@ -62,7 +62,7 @@ const MAP_SELECTOR = '#map';
         await localitiesSelect.selectOption(locality.value);
         await page.waitForTimeout(1000);
     }
-    const sizesWithSelect = page.locator('#sizesWith');
+    const sizesWidthSelect = page.locator('#sizesWidth');
     const sizesHeightSelect = page.locator('#sizesHeight');
 
     // 2. Récupération des territoires disponibles
@@ -658,7 +658,7 @@ const MAP_SELECTOR = '#map';
         await setMapStyle('roadmap', 'Plan');
 
         // Initialiser les sélecteurs de taille à 100% pour la prochaine itération
-        await sizesWithSelect.selectOption('100');
+        await sizesWidthSelect.selectOption('100');
         await sizesHeightSelect.selectOption('100');
     }
 
