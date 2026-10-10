@@ -37,3 +37,18 @@ build/
 
 ### Mac OS ###
 .DS_Store
+
+### Node / Playwright ###
+node_modules/
+captures_maps/
+
+### Generated Runtime Images ###
+territory_mask_detected.png
+roads_detected.png
+clipped.png
+refined_mask.png
+src/main/resources/sample/
+src/main/resources/Territoire CA01/
+src/main/resources/Territoire CA02/
+maps/python/
+src/main/resources/sample 02/
