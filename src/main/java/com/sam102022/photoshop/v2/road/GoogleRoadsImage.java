@@ -1,6 +1,7 @@
 package com.sam102022.photoshop.v2.road;
 
 import com.sam102022.photoshop.core.model.BinaryMask;
+import com.sam102022.photoshop.io.ImagePixels;
 
 import java.awt.image.BufferedImage;
 import java.util.Objects;
@@ -75,11 +76,10 @@ public final class GoogleRoadsImage {
         int w = image.getWidth();
         int h = image.getHeight();
         float[] gray = new float[w * h];
-        int[] row = new int[w];
+        int[] pixels = ImagePixels.argb(image);
         for (int y = 0; y < h; y++) {
-            image.getRGB(0, y, w, 1, row, 0, w);
             for (int x = 0; x < w; x++) {
-                int rgb = row[x];
+                int rgb = pixels[y * w + x];
                 int r = (rgb >> 16) & 0xFF;
                 int g = (rgb >> 8) & 0xFF;
                 int b = rgb & 0xFF;
@@ -174,23 +174,41 @@ public final class GoogleRoadsImage {
         IntStream.range(0, h).parallel().forEach(y -> {
             int row = y * w;
             for (int x = 0; x < w; x++) {
-                float best = v[row + x];
-                for (int k = Math.max(0, x - r); k <= Math.min(w - 1, x + r); k++) {
-                    best = max ? Math.max(best, v[row + k]) : Math.min(best, v[row + k]);
-                }
-                tmp[row + x] = best;
+                tmp[row + x] = extremum(v, row + Math.max(0, x - r), row + Math.min(w - 1, x + r), 1, max);
             }
         });
         float[] out = new float[v.length];
         IntStream.range(0, h).parallel().forEach(y -> {
+            int y0 = Math.max(0, y - r);
+            int y1 = Math.min(h - 1, y + r);
             for (int x = 0; x < w; x++) {
-                float best = tmp[y * w + x];
-                for (int k = Math.max(0, y - r); k <= Math.min(h - 1, y + r); k++) {
-                    best = max ? Math.max(best, tmp[k * w + x]) : Math.min(best, tmp[k * w + x]);
-                }
-                out[y * w + x] = best;
+                out[y * w + x] = extremum(tmp, y0 * w + x, y1 * w + x, w, max);
             }
         });
         return out;
+    }
+
+    /**
+     * Maximum ou minimum des valeurs d'indices {@code from, from + step, …, to}.
+     *
+     * @param v    Valeurs.
+     * @param from Premier indice.
+     * @param to   Dernier indice (inclus).
+     * @param step Pas.
+     * @param max  Vrai pour le maximum, faux pour le minimum.
+     * @return Extremum.
+     */
+    private static float extremum(float[] v, int from, int to, int step, boolean max) {
+        float best = v[from];
+        if (max) {
+            for (int k = from + step; k <= to; k += step) {
+                best = Math.max(best, v[k]);
+            }
+        } else {
+            for (int k = from + step; k <= to; k += step) {
+                best = Math.min(best, v[k]);
+            }
+        }
+        return best;
     }
 }

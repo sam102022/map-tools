@@ -71,4 +71,44 @@ class EuclideanDistanceTransformTest {
             }
         }
     }
+
+    /**
+     * Sur des masques aléatoires (y compris des lignes et colonnes sans pixel cible), chaque distance est
+     * exactement la racine de la plus petite distance au carré calculée par force brute.
+     */
+    @Test
+    @DisplayName("Distances exactes sur masques aléatoires (comparaison à la force brute)")
+    void testRandomMasksMatchBruteForce() {
+        java.util.Random random = new java.util.Random(42);
+        EuclideanDistanceTransform edt = new EuclideanDistanceTransform();
+        for (int trial = 0; trial < 30; trial++) {
+            int width = 1 + random.nextInt(40);
+            int height = 1 + random.nextInt(40);
+            double density = random.nextDouble();
+            BinaryMask mask = new BinaryMask(width, height);
+            for (int y = 0; y < height; y++) {
+                for (int x = 0; x < width; x++) {
+                    mask.set(x, y, random.nextDouble() < density);
+                }
+            }
+            DistanceMap distances = edt.compute(mask);
+            for (int y = 0; y < height; y++) {
+                for (int x = 0; x < width; x++) {
+                    long best = Long.MAX_VALUE;
+                    if (mask.get(x, y)) {
+                        for (int v = 0; v < height; v++) {
+                            for (int u = 0; u < width; u++) {
+                                if (!mask.get(u, v)) {
+                                    best = Math.min(best, (long) (u - x) * (u - x) + (long) (v - y) * (v - y));
+                                }
+                            }
+                        }
+                    }
+                    float expected = !mask.get(x, y) || best == Long.MAX_VALUE ? 0.0f : (float) Math.sqrt(best);
+                    assertEquals(expected, distances.get(x, y), 0.0f,
+                            "Essai " + trial + " (" + x + ", " + y + ")");
+                }
+            }
+        }
+    }
 }

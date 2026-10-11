@@ -62,6 +62,7 @@ public class BoulevardPocketFiller {
     public static final double DEFAULT_TONGUE_RADIUS = 10.0;
 
     private final EuclideanDistanceTransform distanceTransform;
+    private final DiskMorphology morphology;
 
     /**
      * Construit le combleur avec la transformée de distance standard.
@@ -78,6 +79,7 @@ public class BoulevardPocketFiller {
      */
     public BoulevardPocketFiller(EuclideanDistanceTransform distanceTransform) {
         this.distanceTransform = Objects.requireNonNull(distanceTransform, "distanceTransform ne doit pas être nul.");
+        this.morphology = new DiskMorphology(distanceTransform);
     }
 
     /**
@@ -180,7 +182,7 @@ public class BoulevardPocketFiller {
                              int pocketRadius, BinaryMask zone, BinaryMask enclosure) {
         int w = mask.getWidth();
         int h = mask.getHeight();
-        BinaryMask union = or(mask, wide);
+        BinaryMask union = mask.or(wide);
         BinaryMask closed = erode(dilate(union, pocketRadius), pocketRadius);
         BinaryMask candidates = new BinaryMask(w, h);
         for (int y = 0; y < h; y++) {
@@ -297,8 +299,8 @@ public class BoulevardPocketFiller {
     private long includeAdjacentBoulevard(BinaryMask mask, BinaryMask wide, BinaryMask zone, double reach, int minContact) {
         int w = mask.getWidth();
         int h = mask.getHeight();
-        DistanceMap toMask = distanceTo(mask);
-        BinaryMask near = within(mask, toMask, reach);
+        DistanceMap toMask = morphology.distanceTo(mask);
+        BinaryMask near = morphology.within(mask, toMask, reach);
         BinaryMask candidates = new BinaryMask(w, h);
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
@@ -307,7 +309,7 @@ public class BoulevardPocketFiller {
                 }
             }
         }
-        BinaryMask contactZone = within(mask, toMask, CONTACT_TOLERANCE);
+        BinaryMask contactZone = morphology.within(mask, toMask, CONTACT_TOLERANCE);
         BinaryMask addedPixels = new BinaryMask(w, h);
         boolean[] visited = new boolean[w * h];
         int[] queue = new int[w * h];
@@ -475,95 +477,25 @@ public class BoulevardPocketFiller {
     }
 
     /**
-     * Dilatation par un disque : pixels à distance euclidienne &lt;= r de l'ensemble.
+     * Dilatation par un disque de rayon r (morphologie exacte bornée au voisinage de l'ensemble).
      *
      * @param set Ensemble.
      * @param r   Rayon (px).
      * @return Ensemble dilaté.
      */
     BinaryMask dilate(BinaryMask set, double r) {
-        return within(set, distanceTo(set), r);
+        return morphology.dilate(set, r);
     }
 
     /**
-     * Distance euclidienne de chaque pixel à l'ensemble (0 sur l'ensemble, et partout si l'ensemble est vide).
-     *
-     * @param set Ensemble.
-     * @return Carte des distances à l'ensemble.
-     */
-    private DistanceMap distanceTo(BinaryMask set) {
-        int w = set.getWidth();
-        int h = set.getHeight();
-        BinaryMask complement = new BinaryMask(w, h);
-        for (int y = 0; y < h; y++) {
-            for (int x = 0; x < w; x++) {
-                complement.set(x, y, !set.get(x, y));
-            }
-        }
-        return distanceTransform.compute(complement);
-    }
-
-    /**
-     * Pixels à distance euclidienne &lt;= r de l'ensemble.
-     *
-     * @param set   Ensemble.
-     * @param toSet Distance à l'ensemble ({@link #distanceTo(BinaryMask)}).
-     * @param r     Rayon (px).
-     * @return Ensemble dilaté.
-     */
-    private BinaryMask within(BinaryMask set, DistanceMap toSet, double r) {
-        int w = set.getWidth();
-        int h = set.getHeight();
-        BinaryMask out = new BinaryMask(w, h);
-        for (int y = 0; y < h; y++) {
-            for (int x = 0; x < w; x++) {
-                float d = toSet.get(x, y);
-                // d == 0 hors de l'ensemble signifie « aucun pixel de l'ensemble » (ensemble vide)
-                if (set.get(x, y) || (d > 0.0f && d <= r)) {
-                    out.set(x, y, true);
-                }
-            }
-        }
-        return out;
-    }
-
-    /**
-     * Érosion par un disque : pixels à distance euclidienne &gt; r du complément.
+     * Érosion par un disque de rayon r (morphologie exacte bornée au voisinage de l'ensemble).
      *
      * @param set Ensemble.
      * @param r   Rayon (px).
      * @return Ensemble érodé.
      */
     BinaryMask erode(BinaryMask set, double r) {
-        DistanceMap toComplement = distanceTransform.compute(set);
-        BinaryMask out = new BinaryMask(set.getWidth(), set.getHeight());
-        for (int y = 0; y < set.getHeight(); y++) {
-            for (int x = 0; x < set.getWidth(); x++) {
-                if (set.get(x, y) && (toComplement.get(x, y) > r || toComplement.get(x, y) == 0.0f)) {
-                    out.set(x, y, true);
-                }
-            }
-        }
-        return out;
-    }
-
-    /**
-     * Union de deux masques.
-     *
-     * @param a Premier masque.
-     * @param b Second masque.
-     * @return a ∪ b.
-     */
-    private BinaryMask or(BinaryMask a, BinaryMask b) {
-        BinaryMask out = new BinaryMask(a.getWidth(), a.getHeight());
-        for (int y = 0; y < a.getHeight(); y++) {
-            for (int x = 0; x < a.getWidth(); x++) {
-                if (a.get(x, y) || b.get(x, y)) {
-                    out.set(x, y, true);
-                }
-            }
-        }
-        return out;
+        return morphology.erode(set, r);
     }
 
     /**

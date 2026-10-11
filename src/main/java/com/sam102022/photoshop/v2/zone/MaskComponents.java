@@ -72,11 +72,13 @@ public final class MaskComponents {
         boolean[] visited = new boolean[w * h];
         int[] queue = new int[w * h];
         List<Component> result = new ArrayList<>();
-        for (int start = 0; start < w * h; start++) {
-            if (visited[start] || !mask.get(start % w, start / w)) {
-                continue;
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                int start = y * w + x;
+                if (!visited[start] && mask.get(x, y)) {
+                    result.add(collect(mask, visited, queue, start, dx, dy));
+                }
             }
-            result.add(collect(mask, visited, queue, start, dx, dy));
         }
         return result;
     }

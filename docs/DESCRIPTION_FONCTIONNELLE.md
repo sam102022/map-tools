@@ -5,38 +5,39 @@
 ## 🎯 1. Vision & Problématique Métier
 
 ### Le Contexte
-Dans les opérations de cartographie, d'aménagement ou de sectorisation commerciale, les opérateurs délimitent des territoires et des zones d'action à l'aide d'outils de dessin rapide (brosses semi-transparentes, annotations manuelles, tracés grossiers) superposés à Google Maps.
+Dans les opérations de cartographie, d'aménagement ou de sectorisation commerciale, les opérateurs délimitent des territoires et des zones d'action sur Google Maps en traçant des polygones approximatifs.
 
 ### Le Problème
-Ces tracés manuels sont imprécis :
+Ces tracés sont imprécis :
 * Ils mordent sur les habitations ou s'arrêtent au milieu des chaussées.
 * Ils coupent les carrefours et les ronds-points de façon anguleuse et inesthétique.
-* Détourer manuellement ces cartes au lasso ou à la plume sous un logiciel comme Adobe Photoshop prend **plusieurs dizaines de minutes par carte**, avec un résultat variable et fastidieux à maintenir.
+* Détourer ces cartes à la main au lasso ou à la plume sous Adobe Photoshop prend **plusieurs dizaines de minutes par carte**, avec un résultat variable et fastidieux à maintenir.
 
 ### L'Objectif du Projet
-Le projet **Photoshop Map Snapping** automatise intégralement ce détourage en **"aimantant" automatiquement les tracés approximatifs sur le réseau routier réel** pour produire un découpage chirurgical, net et anti-aliasé, au pixel près, en quelques secondes et de manière 100% autonome (socle Java pur, sans dépendance native comme OpenCV).
+Le projet **Photoshop Map Snapping** automatise ce détourage en **« aimantant » les tracés approximatifs sur le réseau routier réel** : le contour suit le bord des chaussées, au sub-pixel près, avec un bord anti-crénelé, en quelques secondes et de manière autonome (Java 21 pur, sans dépendance native).
 
 ---
 
 ## 📥 2. Les Données en Entrée (Inputs)
 
-Le pipeline repose sur la combinaison de plusieurs calques cartographiques synchronisés (capturés à l'échelle identique) :
+Les entrées sont produites par le script de capture `maps/capture_territoires.js` (Node.js + navigateur automatisé), qui ouvre la carte Google Maps du projet, sélectionne chaque territoire et enregistre, dans `maps/captures_maps/Territoire <code>/`, plusieurs calques à la même échelle et au même cadrage :
 
 | Fichier d'entrée | Rôle fonctionnel |
 | :--- | :--- |
-| **Fond de carte à découper** (`05_style_contraste_sans_rien.png` ou `03_style_contraste.png`) | L'image cartographique réelle finale qui sera découpée (de préférence un style épuré, sans textes ni icônes parasites pour garantir un résultat graphique pur). |
-| **Calque d'annotation territoire** (`01_plan_avec_territoires.png`) | Une image contenant le "gribouillage" vert initial fait à main levée, indiquant approximativement où se trouve le territoire. |
-| **Calque de zonage** (`02_plan_avec_zones.png`) *(optionnel)* | Une image annotée avec des cadres ou contours de couleur vive (Rouge, Magenta, etc.) délimitant des sous-secteurs internes. |
-| **Données OpenStreetMap** (`osm_roads.json`) *(recommandé)* | Les coordonnées vectorielles des axes routiers réels extraits sur la zone géographique, servant de vérité terrain topologique. |
+| **Fond de carte à découper** (`05_style_contraste_sans_rien.png`) — **obligatoire** | L'image cartographique qui sera découpée (style épuré, sans textes ni icônes). Les routes y sont aussi reconnues par leur couleur si la capture « Routes seules » est absente. |
+| **Tracé du territoire** (`01_plan_avec_territoires.json`) | Le polygone du territoire (coordonnées géographiques) et le cadrage de la carte (centre, zoom, taille). Pris par défaut à côté de la carte. |
+| **Plan des zones** (`02_plan_avec_zones.png`) — mode zones | La carte avec les zones tracées en couleur : 1 rouge, 2 verte, 3 mauve, 4 orange, 5 cyan, 6 noir. Pris par défaut à côté de la carte. |
+| **Routes seules** (`06_routes_seules.png`) — recommandé | Capture Google des seules routes, en blanc sur fond noir. Utilisée automatiquement si elle est présente : elle donne le réseau routier et le bord exact des chaussées. Le fond doit être entièrement noir (bâtiments, terrain, eau, voies ferrées masqués ou noirs) : tout ce qui est clair est lu comme de la route. |
+| **Données OpenStreetMap** (`osm_roads.json`) — facultatif | Axes routiers OpenStreetMap, utilisables comme autre source du réseau routier (`--road-source osm`). |
+
+Les autres captures (`01_plan_avec_territoires.png`, `03_style_contraste.png`, `04_style_contraste_sans_routes.png`) servent au contrôle visuel.
 
 ---
 
 ## 🔄 3. Les Deux Modes de Fonctionnement Métier
 
-Le projet gère deux besoins distincts avec des règles géométriques opposées :
-
 ```text
-                  [ TERRITOIRE GLOBAL ]
+                  [ TERRITOIRE ]
                   Englobe la chaussée jusqu'au bord extérieur
                         ┌────────────────────────┐
                         │   Route périphérique   │
@@ -52,112 +53,127 @@ Le projet gère deux besoins distincts avec des règles géométriques opposées
                                [ ZONES INTERNES ]
 ```
 
-### 1. Le Mode Territoire (`TERRITORY`)
-* **Objectif :** Découper la silhouette globale du territoire complet sur le fond de carte.
-* **Comportement du magnétisme :** **Calage au bord extérieur (`OUTER`)**.
-* **Règle métier :** Le territoire doit englober l'intégralité de la chaussée des voies qui le bordent ainsi que les ronds-points. L'extérieur de la route marque la frontière avec le reste du monde.
+### 1. Le Mode Territoire (par défaut)
+* **Objectif :** détourer la silhouette complète du territoire sur le fond de carte.
+* **Règle métier :** le territoire englobe toute la chaussée des voies qui le bordent, ainsi que les ronds-points traversés par son tracé. Le bord **extérieur** des routes marque la frontière avec le reste du monde.
 
-### 2. Le Mode Zone (`ZONE`)
-* **Objectif :** Découper des sous-parcelles internes adjacentes au sein d'un même territoire (ex: Zone 1, Zone 2...).
-* **Comportement du magnétisme :** **Calage au bord intérieur (`INNER`)**.
-* **Règle métier :** Les routes qui séparent deux zones ne doivent appartenir ni à l'une ni à l'autre : elles constituent une **barrière étanche neutre**. Le détourage de chaque zone s'arrête strictement au pied de la chaussée (la route est exclue).
+### 2. Le Mode Zones (`--mode zone`)
+* **Objectif :** détourer les zones internes tracées en couleur dans `02_plan_avec_zones.png`, chacune séparément.
+* **Règle métier :** les routes qui bordent une zone ne lui appartiennent pas. Le détourage s'arrête au **bord intérieur** de la chaussée ; les rues intérieures à la zone restent incluses. Les bords suivent le tracé en grands segments rectilignes, sans les décrochements des débouchés de rues ni des entrées de parking.
 
 ---
 
-## ⚙️ 4. Pipeline Fonctionnel de Traitement (Étape par Étape)
+## ⚙️ 4. Pipeline Fonctionnel de Traitement
 
-Le moteur exécute les phases suivantes de façon transparente :
+### 4.1 Territoire
 
 ```text
-[Entrées : Carte + Calque Vert + OSM]
+[Carte 05 + Tracé JSON + Routes seules 06]
        │
        ▼
- 1. Extraction Colorimétrique (Identification du noyau brut)
-       │
+ 1. Projection du tracé et recadrage autour du territoire
        ▼
- 2. Construction du Réseau Routier & Solidification des Ronds-points
-       │
+ 2. Réseau routier et découpage en îlots (cellules)
        ▼
- 3. Recalage Géodésique Positif (Expansion BFS vers la frontière extérieure)
-       │
+ 3. Vote : îlots retenus selon leur recouvrement par le tracé
        ▼
- 4. Vectorisation & Lissage Intelligent (Élimination de l'effet d'escalier)
-       │
+ 4. Consolidation : chaussées frontières, poches le long des boulevards, giratoires frontaliers
        ▼
- 5. Rastérisation Sub-Pixel (Anti-Aliasing) & Préservation du Cœur
-       │
+ 5. Contour vectoriel lissé, ronds-points en arcs d'ellipse
        ▼
-[Sorties : Image transparente PNG + Masque d'opacité]
+ 6. Calage sur le bord exact des chaussées et redressement des bords
+       ▼
+ 7. Rendu anti-crénelé (supersampling ×4) et finitions autour des giratoires
+       ▼
+[clipped.png + mask.png + overlay.png]
 ```
 
-### Étape 1 : Extraction du Masque Brut
-* L'algorithme analyse l'image d'annotation pour extraire la teinte cible (vert pour le territoire, rouge/magenta pour les zones) grâce à un filtre tolérant aux variations de compression JPEG/PNG.
-* Une fermeture morphologique comble les éventuels trous de brosse laissés par l'utilisateur.
+**Étape 1 — Projection et recadrage.** Le polygone du JSON est projeté en pixels (Web Mercator) puis rastérisé. Le calcul se limite à un rectangle englobant élargi d'une marge (`--crop-margin`, 90 px par défaut).
 
-### Étape 2 : Détection & Solidification des Routes
-* Si un fichier `osm_roads.json` est fourni, les axes sont rasterisés avec précision. Sinon, le moteur analyse les contrastes de gris/bleu de Google Maps pour identifier les chaussées (`RoadMask`).
-* **Traitement spécifique des ronds-points :** Les îlots de ronds-points sont identifiés géométriquement par compacité ($\ge 0.90$) et ajustement d'ellipse. Un sondage radial détecte le bord externe de l'anneau de circulation pour y ajuster une ellipse extérieure parfaite. Les raccordements avec les voies d'entrée et de sortie sont assurés par des **splines cubiques d'Hermite**, garantissant une continuité tangentielle $C^1$ sans aucune cassure anguleuse ni boucle indésirable.
+**Étape 2 — Réseau routier et îlots.** Les routes viennent de la capture « Routes seules » si elle existe (lignes de marquage refermées, chemins piétons et autoroutes écartés), sinon de la couleur des routes sur la carte, ou d'OpenStreetMap sur demande. Tout ce qui n'est pas route est découpé en îlots (cellules) délimités par les chaussées.
 
-### Étape 3 : Recalage par Expansion Géodésique Positive
-* Le territoire d'origine n'est jamais rogné arbitrairement.
-* Une onde de propagation (parcours en largeur BFS) étend le masque vert vers l'extérieur :
-  * Elle traverse les espaces vierges jusqu'à une distance limite paramétrable (`snapDistance`) pour aller chercher la route la plus proche.
-  * Dès qu'elle atteint la chaussée, elle l'absorbe.
-  * **L'effet barrière :** L'onde a l'interdiction de ressortir de la route. Elle s'arrête net sur la bordure extérieure de l'axe routier.
+**Étape 3 — Vote topologique.** Chaque îlot est retenu, rejeté ou partiellement retenu selon la part couverte par le tracé (seuil haut 0,80). Dans un îlot partiel, seules les lamelles assez épaisses sont gardées (40 px par défaut, `--min-partial-thickness`), pour ne pas suivre un tracé qui déborde un peu de la route sur un champ.
 
-### Étape 4 : Vectorisation Sub-Pixel & Lissage Robuste LQR
-* Un contour haute précision continu est extrait par Marching Squares à niveau 0.5 autour du masque consolidé, puis ré-échantillonné régulièrement (pas de 1 px).
-* **Détection des coins & angles vifs :** Les virages en épingle et carrefours anguleux sont identifiés sur une fenêtre large ($L = 80\text{ px}$, seuil $\theta \ge 38^\circ$) et préservés via un fondu progressif (*Hermite Smoothstep* $3\alpha^2 - 2\alpha^3$).
-* **Régression Quadratique Locale Robuste (`robust_lqr`) :** Au lieu d'un lissage gaussien linéaire qui rabote les virages, un ajustement polynomial local d'ordre 2 avec M-estimateur de Cauchy/Tukey est appliqué. Il épouse fidèlement les vraies courbes de la chaussée tout en traitant les embranchements de rues adjacentes comme des anomalies statistiques (*outliers*), éliminant bosses et encoches parasites.
+**Étape 4 — Consolidation.**
+* La chaussée des routes qui bordent les îlots retenus est ajoutée jusqu'à son bord extérieur (expansion géodésique bornée, puis ouverture morphologique qui retire les dentelures), sans jamais retirer d'îlot retenu.
+* Le long des boulevards, les poches entre le territoire et la chaussée (bretelles, îlots, terre-pleins) sont comblées et les deux chaussées d'un boulevard longé sont incluses (`--pocket-radius`).
+* Les ronds-points traversés par le tracé sont inclus en entier.
 
-### Étape 5 : Rendu Sub-Pixel par Supersampling Vectoriel ($SS=4$)
-* Le contour vectoriel lissé est rastérisé sur une grille à résolution quadruplée ($SS=4$) avec compensation de décalage demi-pixel ($+0.5\text{ px}$), puis ramené à l'échelle nominale par filtrage boîte (*box filter*).
-* Chaque pixel de bordure reçoit une valeur d'opacité continue et géométriquement exacte $[0..255]$ (`CoverageMask`), sans aucun flou artificiel du masque binaire.
+**Étape 5 — Contour vectoriel.** Le bord du masque est extrait au sub-pixel puis lissé par régression locale robuste, en préservant les angles vifs. Les ronds-points sont remplacés par des arcs d'ellipse raccordés aux routes par des courbes d'Hermite (continuité tangentielle).
+
+**Étape 6 — Calage et redressement.**
+* Le contour est accroché au bord exact des chaussées, lu dans la capture « Routes seules » (désactivable par `--no-road-snap`).
+* Les petites boucles où le contour se recoupe sont supprimées.
+* Les bosses le long des bords rectilignes, au débouché des rues secondaires, sont remplacées par une ligne droite, sauf si cela couperait un rond-point ou un pâté de maisons.
+* Le contour est réduit à des grands segments rectilignes, effet « lasso polygonal » (`--polygon-tolerance`).
+
+**Étape 7 — Rendu.**
+* Le contour est rastérisé sur une grille quatre fois plus fine (`--ss`), ce qui donne à chaque pixel de bord une opacité exacte entre 0 et 255.
+* Autour des ronds-points inclus, les petits coins de terrain blanc restés au-delà de la chaussée sont rendus transparents, et les petites encoches taillées dans l'anneau sont comblées d'après la capture « Routes seules ».
+
+### 4.2 Zones
+
+1. **Extraction des zones :** pour chaque couleur présente dans `02_plan_avec_zones.png`, le trait est isolé (tolérance de couleur, couleur la plus proche en cas d'ambiguïté), les petits traits parasites sont écartés et le trait est refermé si besoin. Chaque région fermée donne une partie de la zone.
+2. **Intérieur de la zone :** vote des îlots comme pour le territoire, sans les chaussées frontières. Les rues intérieures sont conservées, et les giratoires traversés par le tracé sont exclus.
+3. **Bords rectilignes :** chaque côté du tracé est reporté parallèlement au bord intérieur de la chaussée, ce qui donne des bords droits malgré les débouchés de rues et les entrées de parking.
+4. **Contour et rendu :** lissage, polygone à grands segments (tolérance 5 px par défaut), rendu anti-crénelé. Autour des ronds-points, le bord est lu directement dans la capture « Routes seules ».
 
 ---
 
 ## 📤 5. Livrables Générés (Outputs)
 
-Pour chaque traitement, l'application produit un ensemble de fichiers prêts pour la production et le contrôle qualité :
+### Territoire (dans `--out-dir`, par défaut le dossier courant)
+1. **`clipped.png` — image détourée :** la carte découpée en RGBA, extérieur transparent, bord anti-crénelé, prête à être superposée sur n'importe quel fond.
+2. **`mask.png` — masque d'opacité :** niveaux de gris (blanc = conservé, noir = exclu, dégradé sur le bord), utilisable comme masque de fusion dans Photoshop ou un SIG.
+3. **`overlay.png` — contrôle :** la carte avec le contour en rouge, pour vérifier le calage d'un coup d'œil.
 
-1. **L'Image Détourée Haute Fidélité** (`*_clipped.png`) :
-   * L'image source originale découpée, au format RGBA 32-bit.
-   * L'arrière-plan extérieur est 100% transparent.
-   * La bordure présente un fondu sub-pixel doux issu du supersampling $\times 4$, prêt à être superposé sur n'importe quel support ou fond coloré sans effet de crénelage ("pixel art").
-2. **Le Masque Alpha de Découpe** (`*_mask.png`) :
-   * Image en niveaux de gris représentant la couche d'opacité pure (blanc = conservé, noir = masqué, dégradé de gris sur la bordure).
-   * Utilisable directement comme masque de fusion sous Photoshop, Illustrator ou dans un moteur SIG.
-3. **Image de Contrôle & Diagnostic** (`*_overlay.png`) :
-   * Image RGB de la carte avec le tracé du contour extérieur rouge vif superposé, permettant une vérification visuelle instantanée du calage.
+### Zones (dans `--out-dir`)
+Pour chaque zone présente : **`zoneN_<couleur>_mask.png`** (masque d'opacité) et **`zoneN_<couleur>_rendu.png`** (carte détourée), par exemple `zone1_rouge_mask.png` et `zone1_rouge_rendu.png`.
 
 ---
 
-## 💻 6. Modes d'Exploitation
+## 💻 6. Utilisation (ligne de commande)
 
-L'outil propose une double modalité d'utilisation adaptée aussi bien aux développeurs/serveurs qu'aux utilisateurs finaux :
+Seule l'option `--map` est obligatoire ; les autres fichiers sont pris à côté de la carte. Sans argument, l'aide s'affiche.
 
-### A. Mode CLI (Headless / Ligne de Commande)
-Idéal pour les scripts automatisés (Node.js, scripts batch, pipelines de production) :
+**Territoire :**
 ```bash
 java -jar photoshop-1.0.jar \
-  --map "carte_sans_rien.png" \
-  --mask "plan_avec_territoires.png" \
-  --osm-roads "osm_roads.json" \
-  --mode territory \
-  --output "resultat_detoure.png" \
-  --mask-out "masque_alpha.png"
+  --map "maps/captures_maps/Territoire CA02/05_style_contraste_sans_rien.png" \
+  --out-dir "maps/captures_maps/Territoire CA02/sortie"
 ```
 
-### B. Mode GUI (Interface Graphique Interactive Swing)
-Permet à un opérateur d'ajuster visuellement les paramètres :
-* **Panneau de fichiers :** Sélection par glisser-déposer de la carte et des masques.
-* **Contrôles interactifs :** Sliders pour ajuster la distance d'aimantation (`snapDistance`), le rayon de fermeture morphologique et l'activation de l'anti-aliasing.
-* **Visualiseur multi-couches :** Affichage superposé en temps réel du détourage, du masque d'opacité ou de la carte d'origine avec zoom et déplacement à la souris.
+**Zones :**
+```bash
+java -jar photoshop-1.0.jar \
+  --map "maps/captures_maps/Territoire CA02/05_style_contraste_sans_rien.png" \
+  --mode zone \
+  --out-dir "maps/captures_maps/Territoire CA02/sortie_zones"
+```
+
+Options utiles :
+
+| Option | Effet |
+| :--- | :--- |
+| `--json <chemin>` | Tracé du territoire (défaut : `01_plan_avec_territoires.json` à côté de la carte). |
+| `--zones <chemin>` / `--zone 1,3` | Plan des zones, et zones à traiter (numéros ou couleurs ; défaut : toutes). |
+| `--google-roads <png>` / `--no-google-roads` | Capture « Routes seules » explicite, ou détection des routes par la couleur de la carte. |
+| `--road-source osm`, `--osm-roads <json>`, `--road <png>` | Autres sources du réseau routier. |
+| `--output`, `--mask-out`, `--overlay-out` | Chemins explicites des livrables du territoire. |
+| `--polygon-tolerance <px>` | Écart maximal du polygone à grands segments (1 px pour les territoires, 5 px pour les zones ; 0 = désactivé). |
+| `--pocket-radius <px>` | Comblement des poches le long des boulevards (25 px ; 0 = désactivé). |
+| `--min-partial-thickness <px>` | Épaisseur minimale des parties d'îlots conservées (40 px). |
+| `--no-road-snap` | Désactive le calage sur le bord exact des chaussées. |
+| `--ss <n>`, `--crop-margin <px>`, `--eps <px>` | Supersampling, marge de recadrage, marge d'expansion. |
+
+Prévoir une mémoire Java suffisante pour les grandes captures (par exemple `-Xmx8g` pour 5 700 × 3 200 px).
 
 ---
 
 ## ⭐ 7. Résumé des Points Forts
 
-* **Indépendance Totale :** 100% Java 21 standard (aucun binaire OpenCV, GDAL ou Python à installer).
-* **Robustesse Géométrique :** L'approche géodésique positive élimine les risques d'inversion de normales, de croisements de vecteurs aux intersections et de disparition du territoire.
-* **Esthétisme Professionnel :** Solidification native des ronds-points pour un rendu arrondi harmonieux, complété par un anti-aliasing sub-pixel.
+* **Indépendance totale :** 100 % Java 21 standard, aucun binaire OpenCV, GDAL ou Python à installer.
+* **Précision :** contour calé sur le bord des chaussées dessiné par Google, au sub-pixel, avec un bord anti-crénelé.
+* **Robustesse géométrique :** les îlots retenus ne sont jamais rognés ; les ronds-points sont inclus en entier (territoires) ou exclus proprement (zones).
+* **Esthétique :** bords en grands segments rectilignes, bosses et décrochements supprimés, ronds-points arrondis.
+* **Rapidité :** quelques secondes à quelques dizaines de secondes par carte, calculs lourds parallélisés et limités au voisinage utile.

@@ -1,7 +1,6 @@
 package com.sam102022.photoshop.v2.expansion;
 
 import com.sam102022.photoshop.core.model.BinaryMask;
-import java.util.BitSet;
 import java.util.Objects;
 
 /**
@@ -29,7 +28,7 @@ public class ResidualHoleResolver {
         int height = mask.getHeight();
 
         BinaryMask result = cloneMask(mask, width, height);
-        BitSet visited = new BitSet(width * height);
+        boolean[] visited = new boolean[width * height];
         int[] queue = new int[width * height];
 
         markExteriorBackground(mask, visited, queue, width, height);
@@ -80,7 +79,7 @@ public class ResidualHoleResolver {
      * @param width   Largeur.
      * @param height  Hauteur.
      */
-    private void markExteriorBackground(BinaryMask mask, BitSet visited, int[] queue,
+    private void markExteriorBackground(BinaryMask mask, boolean[] visited, int[] queue,
                                         int width, int height) {
         int head = 0;
         int tail = 0;
@@ -98,8 +97,8 @@ public class ResidualHoleResolver {
                 int ny = cy + DY[i];
                 if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
                     int nIdx = ny * width + nx;
-                    if (!mask.get(nx, ny) && !visited.get(nIdx)) {
-                        visited.set(nIdx);
+                    if (!mask.get(nx, ny) && !visited[nIdx]) {
+                        visited[nIdx] = true;
                         queue[tail++] = nIdx;
                     }
                 }
@@ -118,17 +117,17 @@ public class ResidualHoleResolver {
      * @param height  Hauteur.
      * @return Nouveau pointeur de fin de file.
      */
-    private int enqueueHorizontalBorders(BinaryMask mask, BitSet visited, int[] queue,
+    private int enqueueHorizontalBorders(BinaryMask mask, boolean[] visited, int[] queue,
                                          int tail, int width, int height) {
         int bottomOffset = (height - 1) * width;
         for (int x = 0; x < width; x++) {
-            if (!mask.get(x, 0) && !visited.get(x)) {
-                visited.set(x);
+            if (!mask.get(x, 0) && !visited[x]) {
+                visited[x] = true;
                 queue[tail++] = x;
             }
             int bottomIdx = bottomOffset + x;
-            if (!mask.get(x, height - 1) && !visited.get(bottomIdx)) {
-                visited.set(bottomIdx);
+            if (!mask.get(x, height - 1) && !visited[bottomIdx]) {
+                visited[bottomIdx] = true;
                 queue[tail++] = bottomIdx;
             }
         }
@@ -146,17 +145,17 @@ public class ResidualHoleResolver {
      * @param height  Hauteur.
      * @return Nouveau pointeur de fin de file.
      */
-    private int enqueueVerticalBorders(BinaryMask mask, BitSet visited, int[] queue,
+    private int enqueueVerticalBorders(BinaryMask mask, boolean[] visited, int[] queue,
                                        int tail, int width, int height) {
         for (int y = 0; y < height; y++) {
             int leftIdx = y * width;
-            if (!mask.get(0, y) && !visited.get(leftIdx)) {
-                visited.set(leftIdx);
+            if (!mask.get(0, y) && !visited[leftIdx]) {
+                visited[leftIdx] = true;
                 queue[tail++] = leftIdx;
             }
             int rightIdx = y * width + width - 1;
-            if (!mask.get(width - 1, y) && !visited.get(rightIdx)) {
-                visited.set(rightIdx);
+            if (!mask.get(width - 1, y) && !visited[rightIdx]) {
+                visited[rightIdx] = true;
                 queue[tail++] = rightIdx;
             }
         }
@@ -174,12 +173,12 @@ public class ResidualHoleResolver {
      * @param width       Largeur.
      * @param height      Hauteur.
      */
-    private void processHoleComponents(BinaryMask mask, BinaryMask result, BitSet visited,
+    private void processHoleComponents(BinaryMask mask, BinaryMask result, boolean[] visited,
                                        int[] queue, long maxHoleArea, int width, int height) {
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
                 int startIdx = y * width + x;
-                if (!mask.get(x, y) && !visited.get(startIdx)) {
+                if (!mask.get(x, y) && !visited[startIdx]) {
                     int compSize = exploreHoleComponent(mask, visited, queue, startIdx, width, height);
                     if (compSize <= maxHoleArea) {
                         fillHolePixels(result, queue, compSize, width);
@@ -200,11 +199,11 @@ public class ResidualHoleResolver {
      * @param height   Hauteur.
      * @return Nombre total de pixels dans cette cavité.
      */
-    private int exploreHoleComponent(BinaryMask mask, BitSet visited, int[] queue,
+    private int exploreHoleComponent(BinaryMask mask, boolean[] visited, int[] queue,
                                      int startIdx, int width, int height) {
         int head = 0;
         int tail = 0;
-        visited.set(startIdx);
+        visited[startIdx] = true;
         queue[tail++] = startIdx;
 
         while (head < tail) {
@@ -217,8 +216,8 @@ public class ResidualHoleResolver {
                 int ny = cy + DY[i];
                 if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
                     int nIdx = ny * width + nx;
-                    if (!mask.get(nx, ny) && !visited.get(nIdx)) {
-                        visited.set(nIdx);
+                    if (!mask.get(nx, ny) && !visited[nIdx]) {
+                        visited[nIdx] = true;
                         queue[tail++] = nIdx;
                     }
                 }

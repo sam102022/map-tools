@@ -268,7 +268,7 @@ public class V2Pipeline {
 
         // 4 bis. Comblement des poches (bretelles, îlots) entre le territoire et les boulevards
         //        (les autoroutes longées par le polygone sont traitées comme des routes frontières)
-        BinaryMask croppedRoadWithMotorways = union(croppedRoad, motorwayDetector.detectMotorways(mapImage.getSubimage(
+        BinaryMask croppedRoadWithMotorways = croppedRoad.or(motorwayDetector.detectMotorways(mapImage.getSubimage(
                 cropWindow.x0(), cropWindow.y0(), cropWindow.width(), cropWindow.height())));
         ConsolidatedMask pocketFilled = boulevardPocketFiller.fill(
                 consolidatedRaw,
@@ -363,25 +363,6 @@ public class V2Pipeline {
         return points.stream()
                 .map(p -> new PixelPoint(p.x() - cropWindow.x0(), p.y() - cropWindow.y0()))
                 .toList();
-    }
-
-    /**
-     * Union de deux masques de mêmes dimensions.
-     *
-     * @param a Premier masque.
-     * @param b Second masque.
-     * @return a ∪ b.
-     */
-    private static BinaryMask union(BinaryMask a, BinaryMask b) {
-        BinaryMask out = a.copy();
-        for (int y = 0; y < b.getHeight(); y++) {
-            for (int x = 0; x < b.getWidth(); x++) {
-                if (b.get(x, y)) {
-                    out.set(x, y, true);
-                }
-            }
-        }
-        return out;
     }
 
     /**

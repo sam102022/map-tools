@@ -1,5 +1,6 @@
 package com.sam102022.photoshop.v2.edge;
 
+import com.sam102022.photoshop.io.ImagePixels;
 import com.sam102022.photoshop.v2.cell.CropWindow;
 import com.sam102022.photoshop.v2.road.GoogleRoadsImage;
 
@@ -39,7 +40,7 @@ public final class RoadEdgeField {
         this.width = cropWindow.width();
         this.height = cropWindow.height();
         this.values = new float[width * height];
-        int[] rgb = mapImage.getRGB(cropWindow.x0(), cropWindow.y0(), width, height, null, 0, width);
+        int[] rgb = ImagePixels.argb(mapImage, cropWindow.x0(), cropWindow.y0(), width, height);
         float inv = (float) (1.0 / fieldScale);
         for (int i = 0; i < rgb.length; i++) {
             int r = (rgb[i] >>> 16) & 0xFF;

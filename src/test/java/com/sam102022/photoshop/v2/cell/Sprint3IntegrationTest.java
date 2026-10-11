@@ -16,26 +16,24 @@ import java.nio.file.Paths;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Test d'intégration pivot validant le pipeline complet du Sprint 3 sur le Territoire étalon CA01.
- * Chaîne validée : BoundingBoxCropper -> CellLabeler (4-connexité) -> RoadInterfaceExtractor -> CellGraph.
+ * Chaîne validée : BoundingBoxCropper -> CellLabeler (4-connexité).
  */
-@DisplayName("Test d'intégration Sprint 3 : Découpe, Segmentation en 130 cellules & CellGraph CA01")
+@DisplayName("Test d'intégration Sprint 3 : Découpe et segmentation en 130 cellules CA01")
 class Sprint3IntegrationTest {
 
     /**
      * Valide de bout en bout la chaîne algorithmique du Sprint 3 sur le territoire étalon CA01.
      * Vérifie la dimension de la fenêtre de recadrage, le nombre exact de 130 cellules obtenues
-     * en 4-connexité stricte, ainsi que l'extraction des interfaces routières et la complétude du CellGraph.
+     * en 4-connexité stricte.
      *
      * @throws IOException si un fichier de données de test ne peut pas être lu.
      */
     @Test
-    @DisplayName("Pipeline complet Sprint 3 sur CA01 : 130 cellules et graphe topologique conforme à l'étalon Python")
+    @DisplayName("Pipeline complet Sprint 3 sur CA01 : 130 cellules conformes à l'étalon Python")
     void testEndToEndSprint3PipelineOnCA01() throws IOException {
         Path jsonPath = Paths.get("src/test/resources/v2/fixtures/CA01/01_plan_avec_territoires.json");
         if (!Files.exists(jsonPath)) {
@@ -81,20 +79,9 @@ class Sprint3IntegrationTest {
                 "Le nombre de cellules sur la zone rognée CA01 doit être exactement de 130.");
         assertEquals(130, labelingResult.labelMap().cellCount());
 
-        // 3.3 Extraction des interfaces routières et assemblage du CellGraph
-        RoadInterfaceExtractor extractor = new RoadInterfaceExtractor();
-        CellGraph graph = extractor.buildGraph(labelingResult, croppedRoad);
-
         long elapsed = System.currentTimeMillis() - startTime;
 
-        assertNotNull(graph);
-        assertEquals(130, graph.cells().size());
-        assertFalse(graph.roadInterfaces().isEmpty(), "Le graphe doit contenir des interfaces routières.");
-        assertTrue(graph.roadInterfaces().size() >= 200,
-                "Le réseau routier CA01 doit comporter au moins 200 tronçons d'interfaces entre cellules.");
-
-        System.out.printf("Pipeline algorithmique Sprint 3 exécuté avec succès en %d ms (130 cellules, %d interfaces routières).%n",
-                elapsed, graph.roadInterfaces().size());
+        System.out.printf("Pipeline algorithmique Sprint 3 exécuté avec succès en %d ms (130 cellules).%n", elapsed);
 
         // Budget de performance : exécution algorithmique complète en moins de 1000 ms (critère nominal <= 1000 ms)
         assertTrue(elapsed < 1000, "Le temps de calcul algorithmique doit être inférieur à 1000 ms : " + elapsed + " ms");

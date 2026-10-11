@@ -1,9 +1,12 @@
 package com.sam102022.photoshop.v2.render;
 
 import com.sam102022.photoshop.core.model.CoverageMask;
+import com.sam102022.photoshop.io.ImagePixels;
 
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
+import java.awt.image.DataBufferByte;
+import java.awt.image.DataBufferInt;
 import java.util.Objects;
 import java.util.logging.Logger;
 
@@ -53,6 +56,8 @@ public class ImageClipper {
     private BufferedImage createClippedImage(BufferedImage mapImage, CoverageMask coverageMask, int w, int h) {
         BufferedImage clipped = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
         boolean hasAlpha = mapImage.getColorModel().hasAlpha();
+        int[] source = ImagePixels.argb(mapImage);
+        int[] target = ((DataBufferInt) clipped.getRaster().getDataBuffer()).getData();
 
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
@@ -60,11 +65,11 @@ public class ImageClipper {
                 if (cov == 0) {
                     continue;
                 }
-                int rgb = mapImage.getRGB(x, y);
+                int rgb = source[y * w + x];
                 int srcAlpha = hasAlpha ? ((rgb >>> 24) & 0xFF) : 255;
                 int finalAlpha = (srcAlpha * cov + 127) / 255;
                 if (finalAlpha > 0) {
-                    clipped.setRGB(x, y, (finalAlpha << 24) | (rgb & 0x00FFFFFF));
+                    target[y * w + x] = (finalAlpha << 24) | (rgb & 0x00FFFFFF);
                 }
             }
         }
@@ -76,9 +81,10 @@ public class ImageClipper {
      */
     private BufferedImage createMaskImage(CoverageMask coverageMask, int w, int h) {
         BufferedImage mask = new BufferedImage(w, h, BufferedImage.TYPE_BYTE_GRAY);
+        byte[] target = ((DataBufferByte) mask.getRaster().getDataBuffer()).getData();
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
-                mask.getRaster().setSample(x, y, 0, coverageMask.get(x, y));
+                target[y * w + x] = (byte) coverageMask.get(x, y);
             }
         }
         return mask;
@@ -101,11 +107,12 @@ public class ImageClipper {
         // 2. Détection de bordure morphologique : Edge = Mfull & ~erode(Mfull)
         boolean[] mFull = buildThresholdMask(coverageMask, w, h, 128);
 
+        int[] target = ((DataBufferInt) overlay.getRaster().getDataBuffer()).getData();
         for (int y = 0; y < h; y++) {
             int rowOffset = y * w;
             for (int x = 0; x < w; x++) {
                 if (mFull[rowOffset + x] && isEdgePixel(mFull, x, y, w, h)) {
-                    overlay.setRGB(x, y, 0xFF0000);
+                    target[rowOffset + x] = 0xFF0000;
                 }
             }
         }

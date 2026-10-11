@@ -2,6 +2,7 @@ package com.sam102022.photoshop.v2.zone;
 
 import com.sam102022.photoshop.core.model.BinaryMask;
 import com.sam102022.photoshop.v2.contour.SubpixelContourExtractor;
+import com.sam102022.photoshop.v2.expansion.DiskMorphology;
 import com.sam102022.photoshop.v2.geometry.PixelPoint;
 import com.sam102022.photoshop.v2.geometry.PolygonRasterizer;
 

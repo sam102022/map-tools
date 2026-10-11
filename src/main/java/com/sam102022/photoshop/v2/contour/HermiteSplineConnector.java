@@ -191,20 +191,6 @@ public class HermiteSplineConnector {
     }
 
     /**
-     * Intègre les ronds-points détectés dans le contour en substituant l'arc extérieur de l'ellipse.
-     *
-     * @param contour       Contour fermé en cours de traitement.
-     * @param roundabouts   Liste des ronds-points détectés.
-     * @param territoryMask Masque du territoire retenu (pour tester l'extérieur de l'arc).
-     * @param roundaboutZr  Rayon d'influence relatif (typiquement 2.0).
-     * @return Contour vectoriel enrichi des arcs d'ellipses.
-     */
-    public List<PixelPoint> integrateRoundabouts(List<PixelPoint> contour, List<Roundabout> roundabouts,
-                                                 BinaryMask territoryMask, double roundaboutZr) {
-        return integrateRoundaboutsWithTracking(contour, roundabouts, territoryMask, roundaboutZr).contour();
-    }
-
-    /**
      * Vérifie si le contour longe physiquement l'anneau giratoire (au moins 12 points dans la couronne).
      *
      * @param contour Points du contour fermé.

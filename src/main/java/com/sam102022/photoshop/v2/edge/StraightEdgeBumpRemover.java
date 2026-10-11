@@ -82,7 +82,8 @@ public class StraightEdgeBumpRemover {
             xs[k] = points.get(k).x();
             ys[k] = points.get(k).y();
         }
-        double[] arc = cumulativeArc(xs, ys);
+        double[] segment = segmentLengths(xs, ys);
+        double[] arc = cumulativeArc(segment);
         double perimeter = arc[n];
         if (perimeter < 2.0 * ARM_LENGTH + MAX_BUMP_LENGTH) {
             return contour;
@@ -94,7 +95,7 @@ public class StraightEdgeBumpRemover {
             int best = -1;
             double bestMisalignment = Double.MAX_VALUE;
             for (int j = i + 2; j < n && arc[j] - arc[i] <= MAX_BUMP_LENGTH; j++) {
-                double misalignment = bumpMisalignment(xs, ys, arc, perimeter, i, j);
+                double misalignment = bumpMisalignment(xs, ys, segment, arc, perimeter, i, j);
                 if (misalignment <= bestMisalignment + ALIGNMENT_EPSILON) {
                     bestMisalignment = Math.min(bestMisalignment, misalignment);
                     best = j;
@@ -149,6 +150,7 @@ public class StraightEdgeBumpRemover {
      *
      * @param xs        Abscisses.
      * @param ys        Ordonnées.
+     * @param segment   Longueur du segment aboutissant à chaque point ({@link #segmentLengths}).
      * @param arc       Abscisses curvilignes cumulées.
      * @param perimeter Périmètre.
      * @param i         Début de la portion.
@@ -156,7 +158,8 @@ public class StraightEdgeBumpRemover {
      * @return Écart maximal (px) des bords rectilignes à la droite de la corde, ou l'infini si la portion
      *         n'est pas une bosse.
      */
-    private double bumpMisalignment(double[] xs, double[] ys, double[] arc, double perimeter, int i, int j) {
+    private double bumpMisalignment(double[] xs, double[] ys, double[] segment, double[] arc, double perimeter,
+                                    int i, int j) {
         int n = xs.length;
         double dx = xs[j] - xs[i];
         double dy = ys[j] - ys[i];
@@ -172,7 +175,7 @@ public class StraightEdgeBumpRemover {
         int k = i;
         while (travelled < ARM_LENGTH) {
             int prev = Math.floorMod(k - 1, n);
-            travelled += Math.hypot(xs[k] - xs[prev], ys[k] - ys[prev]);
+            travelled += segment[k];
             k = prev;
             double rx = xs[k] - xs[i];
             double ry = ys[k] - ys[i];
@@ -186,7 +189,7 @@ public class StraightEdgeBumpRemover {
         k = j;
         while (travelled < ARM_LENGTH) {
             int next = (k + 1) % n;
-            travelled += Math.hypot(xs[next] - xs[k], ys[next] - ys[k]);
+            travelled += segment[next];
             k = next;
             double rx = xs[k] - xs[j];
             double ry = ys[k] - ys[j];
@@ -355,19 +358,34 @@ public class StraightEdgeBumpRemover {
     }
 
     /**
-     * Abscisses curvilignes cumulées ; la dernière case contient le périmètre.
+     * Longueur du segment aboutissant à chaque point (le point 0 étant relié au dernier), calculée une fois pour
+     * toutes : les bras rectilignes sont parcourus pour chaque corde candidate.
      *
      * @param xs Abscisses.
      * @param ys Ordonnées.
+     * @return Longueurs, de taille n.
+     */
+    private double[] segmentLengths(double[] xs, double[] ys) {
+        int n = xs.length;
+        double[] segment = new double[n];
+        for (int k = 0; k < n; k++) {
+            int prev = Math.floorMod(k - 1, n);
+            segment[k] = Math.hypot(xs[k] - xs[prev], ys[k] - ys[prev]);
+        }
+        return segment;
+    }
+
+    /**
+     * Abscisses curvilignes cumulées ; la dernière case contient le périmètre.
+     *
+     * @param segment Longueur du segment aboutissant à chaque point.
      * @return Tableau de taille n + 1.
      */
-    private double[] cumulativeArc(double[] xs, double[] ys) {
-        int n = xs.length;
+    private double[] cumulativeArc(double[] segment) {
+        int n = segment.length;
         double[] arc = new double[n + 1];
         for (int k = 1; k <= n; k++) {
-            int prev = k - 1;
-            int cur = k % n;
-            arc[k] = arc[k - 1] + Math.hypot(xs[cur] - xs[prev], ys[cur] - ys[prev]);
+            arc[k] = arc[k - 1] + segment[k % n];
         }
         return arc;
     }

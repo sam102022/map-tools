@@ -5,6 +5,7 @@ import com.sam102022.photoshop.core.model.CoverageMask;
 import com.sam102022.photoshop.v2.cell.CropWindow;
 import com.sam102022.photoshop.v2.contour.EllipseModel;
 import com.sam102022.photoshop.v2.contour.Roundabout;
+import com.sam102022.photoshop.v2.expansion.DiskMorphology;
 import com.sam102022.photoshop.v2.road.GoogleRoadsImage;
 
 import java.util.List;

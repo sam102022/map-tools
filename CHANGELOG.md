@@ -5,6 +5,19 @@ Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/)
 
 ## [Non publié] - 2026-10-08
 
+### Performances
+- Détourage plus rapide, sorties identiques au pixel (masques, rendus et contrôles comparés par empreinte MD5 sur CA01, CA02, CA02 du 10/10 et les zones de CA02) : territoires −10 à −20 %, zones −33 % (mesuré sur 2 cœurs ; le gain est plus fort sur une machine à plus de cœurs).
+  - `DiskMorphology` (déplacée dans `v2.expansion`) : dilatation et érosion calculées dans le rectangle englobant de l'ensemble élargi du rayon, au lieu de l'image entière ; partagée par `BoulevardPocketFiller` (méthodes dupliquées supprimées) et `MorphologicalConsolidator` (ouverture par transformée de distance au lieu du balayage du disque pixel par pixel).
+  - `EuclideanDistanceTransform` : phase horizontale de Meijster en arithmétique entière, passe verticale parallélisée par bandes de colonnes.
+  - `ZoneExtractor` : recherche des régions fermées dans le rectangle englobant du trait de la zone.
+  - Nouvelle classe `ImagePixels` : lecture directe des pixels des images PNG (résultat identique à `getRGB`), utilisée par `GoogleRoadsImage`, `RoadDetectorStyle`, `RoadEdgeField`, `ZoneExtractor` et `ImageClipper` (écriture directe des tampons des images produites).
+  - `StraightEdgeBumpRemover` : longueurs de segments calculées une seule fois ; `ResidualHoleResolver` : tableau booléen au lieu d'un `BitSet` ; filtres min/max de `GoogleRoadsImage` et parcours de `MaskComponents` simplifiés.
+  - Nouveaux tests : `DiskMorphologyTest` (comparaison à la force brute), test aléatoire de `EuclideanDistanceTransformTest`, test d'`ImagePixels` dans `ImageIoTest`.
+
+### Supprimé
+- Code V2 mort (jamais atteint depuis `Main`) : `CellGraph`, `RoadInterface`, `RoadInterfaceExtractor`, `BoundaryRoadPartitioner` et leurs tests ; `HermiteSplineConnector.integrateRoundabouts` ; méthodes de rendu V1 d'`ImageExporter` (`createClippedImage*`, `createMaskImage`, `createCoverageMaskImage`, `smoothCoverage`) et `ImageLoader.validateDimensions`. Unions de masques redondantes remplacées par `BinaryMask.or`.
+- Code de la version 1 : moteur V1 (`core.detection`, `core.geometry`, `core.segmentation`, `SelectorColor`, `SnappingConfig`), lanceur `CliRunner`, interface graphique Swing (`gui`) et leurs 23 classes de tests. `Main` lance désormais uniquement la ligne de commande V2 (aide affichée sans argument ; l'option `--gui` disparaît). Conservés car utilisés par la V2 : `BinaryMask`, `CoverageMask`, `OperationMode`, `ImageLoader`, `ImageExporter`.
+
 ### Corrigé
 - Territoires : taches blanches et encoches aux entrées et sorties des giratoires frontaliers. Nouveau `RoundaboutSliverCleaner` (v2.render), appliqué dans `V2Pipeline` après le rendu lorsque la capture « Routes seules » est disponible : petits coins de terrain (< 300 px) touchant l'extérieur rendus transparents, petites encoches de chaussée (< 150 px) comblées d'après la capture. Test : `RoundaboutSliverCleanerTest`.
 - Territoire CA02 : bosses du contour aux débouchés des rues le long des boulevards (route de Paris). Nouveau `StraightEdgeBumpRemover` (v2.edge) : une bosse de moins de 90 px sur un bord rectiligne (aligné à ± 1,5 px sur 50 px de part et d'autre, écart à la corde de 1 à 25 px) est remplacée par sa corde, sauf si la corde entre dans un giratoire ou balaierait de la terre. Appliqué dans `V2Pipeline` après `LocalLoopRemover`. Test : `StraightEdgeBumpRemoverTest`.

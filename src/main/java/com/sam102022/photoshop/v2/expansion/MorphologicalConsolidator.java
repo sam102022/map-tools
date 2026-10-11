@@ -1,8 +1,6 @@
 package com.sam102022.photoshop.v2.expansion;
 
 import com.sam102022.photoshop.core.model.BinaryMask;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Objects;
 
 /**
@@ -11,8 +9,12 @@ import java.util.Objects;
  * Applique une ouverture morphologique (érosion puis dilatation par un disque euclidien) sur
  * l'union {@code U = T | ext} pour éliminer les excroissances et dentelures de voirie, puis
  * réinjecte inconditionnellement {@code T} afin de sanctuariser intégralement les îlots intérieurs.
+ * L'ouverture est calculée par transformée de distance ({@link DiskMorphology}), identique au balayage du
+ * disque {@code dx² + dy² <= r²} mais en temps indépendant du rayon.
  */
 public class MorphologicalConsolidator {
+
+    private final DiskMorphology morphology = new DiskMorphology();
 
     /**
      * Consolide et lisse la bordure routière par ouverture circulaire tout en sanctuarisant T.
@@ -31,12 +33,10 @@ public class MorphologicalConsolidator {
             return buildDirectUnion(retainedMask, roadExtension, width, height);
         }
 
-        int[][] diskOffsets = createDiskOffsets(diskRadius);
         int pad = diskRadius + 2;
 
         BinaryMask padded = createPaddedUnion(retainedMask, roadExtension, width, height, pad);
-        BinaryMask eroded = erode(padded, diskOffsets);
-        BinaryMask dilated = dilate(eroded, diskOffsets);
+        BinaryMask dilated = morphology.open(padded, diskRadius);
 
         return buildSanctuarizedResult(retainedMask, dilated, width, height, pad);
     }
@@ -58,25 +58,6 @@ public class MorphologicalConsolidator {
         if (diskRadius < 0) {
             throw new IllegalArgumentException("diskRadius doit être positif ou nul.");
         }
-    }
-
-    /**
-     * Génère la liste des décalages relatifs (dx, dy) composant le disque euclidien.
-     *
-     * @param radius Rayon du disque en pixels.
-     * @return Tableau 2D des coordonnées relatives contenues dans le disque.
-     */
-    private int[][] createDiskOffsets(int radius) {
-        List<int[]> list = new ArrayList<>();
-        int r2 = radius * radius;
-        for (int dy = -radius; dy <= radius; dy++) {
-            for (int dx = -radius; dx <= radius; dx++) {
-                if (dx * dx + dy * dy <= r2) {
-                    list.add(new int[]{dx, dy});
-                }
-            }
-        }
-        return list.toArray(new int[0][]);
     }
 
     /**
@@ -124,94 +105,6 @@ public class MorphologicalConsolidator {
             }
         }
         return padded;
-    }
-
-    /**
-     * Érode le masque binaire par l'élément structurant fourni.
-     *
-     * @param src     Masque source.
-     * @param offsets Décalages relatifs de l'élément structurant.
-     * @return Nouveau masque érodé.
-     */
-    private BinaryMask erode(BinaryMask src, int[][] offsets) {
-        int w = src.getWidth();
-        int h = src.getHeight();
-        BinaryMask result = new BinaryMask(w, h);
-
-        for (int y = 0; y < h; y++) {
-            for (int x = 0; x < w; x++) {
-                if (src.get(x, y) && checkAllOffsetsTrue(src, x, y, offsets, w, h)) {
-                    result.set(x, y, true);
-                }
-            }
-        }
-        return result;
-    }
-
-    /**
-     * Vérifie si tous les voisins de l'élément structurant sont actifs.
-     *
-     * @param src     Masque binaire.
-     * @param x       Coordonnée X centrale.
-     * @param y       Coordonnée Y centrale.
-     * @param offsets Voisins relatifs.
-     * @param w       Largeur.
-     * @param h       Hauteur.
-     * @return true si tous les pixels correspondants sont à true, false sinon.
-     */
-    private boolean checkAllOffsetsTrue(BinaryMask src, int x, int y,
-                                        int[][] offsets, int w, int h) {
-        for (int[] offset : offsets) {
-            int nx = x + offset[0];
-            int ny = y + offset[1];
-            if (nx < 0 || nx >= w || ny < 0 || ny >= h || !src.get(nx, ny)) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    /**
-     * Dilate le masque binaire par l'élément structurant fourni.
-     *
-     * @param src     Masque source.
-     * @param offsets Décalages relatifs du disque.
-     * @return Nouveau masque dilaté.
-     */
-    private BinaryMask dilate(BinaryMask src, int[][] offsets) {
-        int w = src.getWidth();
-        int h = src.getHeight();
-        BinaryMask result = new BinaryMask(w, h);
-
-        for (int y = 0; y < h; y++) {
-            for (int x = 0; x < w; x++) {
-                if (src.get(x, y)) {
-                    applyDilationFootprint(result, x, y, offsets, w, h);
-                }
-            }
-        }
-        return result;
-    }
-
-    /**
-     * Active les pixels voisins lors de la dilatation d'un pixel actif.
-     *
-     * @param result  Masque cible.
-     * @param x       Origine X.
-     * @param y       Origine Y.
-     * @param offsets Décalages du disque.
-     * @param w       Largeur.
-     * @param h       Hauteur.
-     */
-    private void applyDilationFootprint(BinaryMask result, int x, int y,
-                                       int[][] offsets, int w, int h) {
-        for (int[] offset : offsets) {
-            int nx = x + offset[0];
-            int ny = y + offset[1];
-            if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
-                result.set(nx, ny, true);
-            }
-        }
     }
 
     /**

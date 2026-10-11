@@ -1,6 +1,7 @@
 package com.sam102022.photoshop.v2.road;
 
 import com.sam102022.photoshop.core.model.BinaryMask;
+import com.sam102022.photoshop.io.ImagePixels;
 
 import java.awt.image.BufferedImage;
 
@@ -40,7 +41,7 @@ public final class RoadDetectorStyle implements RoadDetector {
 
         int width = image.getWidth();
         int height = image.getHeight();
-        int[] pixels = image.getRGB(0, 0, width, height, null, 0, width);
+        int[] pixels = ImagePixels.argb(image);
         boolean[] maskData = new boolean[width * height];
 
         for (int i = 0; i < pixels.length; i++) {
@@ -89,7 +90,7 @@ public final class RoadDetectorStyle implements RoadDetector {
         }
         int width = image.getWidth();
         int height = image.getHeight();
-        int[] pixels = image.getRGB(0, 0, width, height, null, 0, width);
+        int[] pixels = ImagePixels.argb(image);
         boolean[] maskData = new boolean[width * height];
         for (int i = 0; i < pixels.length; i++) {
             int r = (pixels[i] >>> 16) & 0xFF;

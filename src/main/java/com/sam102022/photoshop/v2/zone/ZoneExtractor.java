@@ -1,6 +1,8 @@
 package com.sam102022.photoshop.v2.zone;
 
 import com.sam102022.photoshop.core.model.BinaryMask;
+import com.sam102022.photoshop.io.ImagePixels;
+import com.sam102022.photoshop.v2.expansion.DiskMorphology;
 import com.sam102022.photoshop.v2.expansion.DistanceMap;
 
 import java.awt.image.BufferedImage;
@@ -79,10 +81,14 @@ public final class ZoneExtractor {
                                     long minArea) {
         Objects.requireNonNull(zonesImage, "zonesImage ne doit pas être nulle.");
         Objects.requireNonNull(zone, "zone ne doit pas être nulle.");
-        BinaryMask stroke = longStrokes(colorMask(zonesImage, zone, colorTolerance), minExtent);
-        if (stroke.countActivePixels() == 0) {
+        BinaryMask fullStroke = longStrokes(colorMask(zonesImage, zone, colorTolerance), minExtent);
+        // Les régions fermées et leur dilatation restent dans le rectangle englobant du trait : le calcul est
+        // mené dans ce rectangle élargi (résultat identique, coût proportionnel à la taille de la zone).
+        int[] window = DiskMorphology.window(fullStroke, GAP_RADII[GAP_RADII.length - 1] + STROKE_HALF_WIDTH);
+        if (window == null) {
             return List.of();
         }
+        BinaryMask stroke = DiskMorphology.crop(fullStroke, window);
         DistanceMap toStroke = morphology.distanceTo(stroke);
         for (double r : GAP_RADII) {
             BinaryMask barrier = morphology.within(stroke, toStroke, r);
@@ -91,7 +97,8 @@ public final class ZoneExtractor {
                 List<BinaryMask> parts = new ArrayList<>();
                 for (MaskComponents.Component region : regions) {
                     BinaryMask part = region.toMask(stroke.getWidth(), stroke.getHeight());
-                    parts.add(morphology.dilate(part, r + STROKE_HALF_WIDTH));
+                    parts.add(DiskMorphology.paste(morphology.dilate(part, r + STROKE_HALF_WIDTH), window,
+                            fullStroke.getWidth(), fullStroke.getHeight()));
                 }
                 LOGGER.info(() -> String.format("[Zones] %s : %d partie(s), trait refermé au rayon %.0f px.",
                         zone.fileLabel(), parts.size(), r));
@@ -115,11 +122,11 @@ public final class ZoneExtractor {
         int w = image.getWidth();
         int h = image.getHeight();
         BinaryMask out = new BinaryMask(w, h);
-        int[] row = new int[w];
+        int[] pixels = ImagePixels.argb(image);
         for (int y = 0; y < h; y++) {
-            image.getRGB(0, y, w, 1, row, 0, w);
             for (int x = 0; x < w; x++) {
-                if (zone.distance(row[x]) <= tolerance && isNearestZone(zone, row[x])) {
+                int rgb = pixels[y * w + x];
+                if (zone.distance(rgb) <= tolerance && isNearestZone(zone, rgb)) {
                     out.set(x, y, true);
                 }
             }

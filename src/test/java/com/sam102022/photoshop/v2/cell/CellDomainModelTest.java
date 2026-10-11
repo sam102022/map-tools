@@ -1,23 +1,18 @@
 package com.sam102022.photoshop.v2.cell;
 
-import com.sam102022.photoshop.core.model.BinaryMask;
 import com.sam102022.photoshop.v2.geometry.PixelPoint;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.util.List;
-import java.util.Optional;
-import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Suite de tests unitaires pour les contrats et modèles de domaine du Sprint 3
- * ({@link CropWindow}, {@link CellLabelMap}, {@link Cell}, {@link RoadInterface}, {@link CellGraph}).
+ * ({@link CropWindow}, {@link CellLabelMap}, {@link Cell}).
  */
 @DisplayName("Validation des contrats et invariants du domaine du Sprint 3")
 class CellDomainModelTest {
@@ -113,79 +108,5 @@ class CellDomainModelTest {
                 () -> new Cell(1, 50, 20, 20, 15, 30, new PixelPoint(12.5, 25.0)));
         assertThrows(IllegalArgumentException.class,
                 () -> new Cell(1, 50, 10, 20, 15, 30, null));
-    }
-
-    /**
-     * Vérifie l'invariant d'ordonnancement cellA &lt; cellB et les méthodes d'accès de RoadInterface.
-     */
-    @Test
-    @DisplayName("RoadInterface : validation de l'ordonnancement cellA < cellB et opposés")
-    void testRoadInterface() {
-        BinaryMask mask = new BinaryMask(10, 10);
-        RoadInterface ri = new RoadInterface(1, 2, 5, mask, 15);
-
-        assertEquals(1, ri.id());
-        assertEquals(2, ri.cellA());
-        assertEquals(5, ri.cellB());
-        assertEquals(15, ri.area());
-        assertNotNull(ri.mask());
-
-        assertTrue(ri.connects(2));
-        assertTrue(ri.connects(5));
-        assertFalse(ri.connects(3));
-
-        assertEquals(5, ri.getOppositeCell(2));
-        assertEquals(2, ri.getOppositeCell(5));
-        assertThrows(IllegalArgumentException.class, () -> ri.getOppositeCell(3));
-
-        // Rejet cellA >= cellB
-        assertThrows(IllegalArgumentException.class, () -> new RoadInterface(1, 5, 2, mask, 15));
-        assertThrows(IllegalArgumentException.class, () -> new RoadInterface(1, 2, 2, mask, 15));
-        assertThrows(IllegalArgumentException.class, () -> new RoadInterface(0, 2, 5, mask, 15));
-        assertThrows(IllegalArgumentException.class, () -> new RoadInterface(1, 2, 5, null, 15));
-        assertThrows(IllegalArgumentException.class, () -> new RoadInterface(1, 2, 5, mask, 0));
-    }
-
-    /**
-     * Vérifie la recherche par identifiant, l'accès aux interfaces et les voisinages dans CellGraph.
-     */
-    @Test
-    @DisplayName("CellGraph : validation de la navigation et relations de voisinage")
-    void testCellGraph() {
-        Cell cell1 = new Cell(1, 20, 0, 0, 4, 4, new PixelPoint(2, 2));
-        Cell cell2 = new Cell(2, 30, 6, 0, 10, 4, new PixelPoint(8, 2));
-        Cell cell3 = new Cell(3, 40, 0, 6, 10, 10, new PixelPoint(5, 8));
-
-        BinaryMask mask = new BinaryMask(11, 11);
-        RoadInterface ri12 = new RoadInterface(1, 1, 2, mask, 10);
-        RoadInterface ri13 = new RoadInterface(2, 1, 3, mask, 12);
-
-        CellGraph graph = new CellGraph(List.of(cell1, cell2, cell3), List.of(ri12, ri13));
-
-        assertEquals(3, graph.cells().size());
-        assertEquals(2, graph.roadInterfaces().size());
-
-        assertTrue(graph.findCell(1).isPresent());
-        assertTrue(graph.findCell(99).isEmpty());
-
-        assertEquals(2, graph.getInterfaces(1).size());
-        assertEquals(1, graph.getInterfaces(2).size());
-        assertEquals(0, graph.getInterfaces(99).size());
-
-        Optional<RoadInterface> found = graph.findInterface(1, 2);
-        assertTrue(found.isPresent());
-        assertEquals(1, found.get().id());
-
-        Optional<RoadInterface> reverseOrder = graph.findInterface(2, 1);
-        assertTrue(reverseOrder.isPresent());
-        assertEquals(1, reverseOrder.get().id());
-
-        assertTrue(graph.findInterface(2, 3).isEmpty());
-
-        Set<Integer> neighbors1 = graph.getNeighbors(1);
-        assertEquals(Set.of(2, 3), neighbors1);
-
-        Set<Integer> neighbors2 = graph.getNeighbors(2);
-        assertEquals(Set.of(1), neighbors2);
     }
 }
