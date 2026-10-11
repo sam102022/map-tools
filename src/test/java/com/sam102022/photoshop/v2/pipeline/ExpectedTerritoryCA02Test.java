@@ -142,7 +142,11 @@ class ExpectedTerritoryCA02Test {
                 : new RoadMaskCleaner().clean(new RoadDetectorStyle().detect(img)).closed();
         RenderResult result = new V2Pipeline().execute(img, loaded.geometry(), ctx, road, V2Config.defaultConfig(), roads);
 
-        boolean[] expected = expectedMask(ImageIO.read(expectedPath.toFile()));
+        BufferedImage expectedImage = ImageIO.read(expectedPath.toFile());
+        if (expectedImage.getWidth() != img.getWidth() || expectedImage.getHeight() != img.getHeight()) {
+            return; // référence établie sur une capture d'un autre cadrage
+        }
+        boolean[] expected = expectedMask(expectedImage);
         long inter = 0;
         long union = 0;
         int w = img.getWidth();

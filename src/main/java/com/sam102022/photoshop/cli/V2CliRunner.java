@@ -389,7 +389,7 @@ public final class V2CliRunner {
         out.println("  --crop-margin <int>    Marge de sécurité de la boîte englobante en pixels (défaut : 90)");
         out.println("  --eps <double>         Marge de sécurité d'expansion géodésique (défaut : 4.0)");
         out.println("  --min-partial-thickness <px>  Épaisseur minimale des lamelles de cellules partielles conservées");
-        out.println("                         (défaut : 25 ; 0 = comportement de l'étalon Python v7)");
+        out.println("                         (défaut : 40 ; 0 = comportement de l'étalon Python v7)");
         out.println("  --no-road-snap         Désactive l'accrochage du contour sur le bord vectoriel des routes");
         out.println("  --polygon-tolerance <px>  Écart max. du polygone à grands segments (défaut : 1.0, zones : 5.0 ; 0 = désactivé)");
         out.println("  --pocket-radius <px>   Comble bretelles et îlots le long des boulevards (défaut : 25 ; 0 = désactivé)");

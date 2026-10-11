@@ -6,6 +6,7 @@ Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/)
 ## [Non publié] - 2026-10-08
 
 ### Corrigé
+- Territoire CA02 (capture du 10/10, 5715 x 3195 px), rue du Moulin de la Garde : le tracé du territoire déborde de 25 à 35 px au-delà de la route, sur un grand champ ; la lamelle champ ∩ tracé (plus épaisse que 25 px) était conservée et le détourage s'écartait de la route. `CellSelectionPolicy.DEFAULT_MIN_PARTIAL_THICKNESS` 25 → 40 px (CA01 inchangé, référence CA02 inchangée). `ExpectedTerritoryCA02Test` ignoré si la référence n'a pas les dimensions de la capture.
 - `ZoneInteriorBuilder` : un îlot pris pour un giratoire n'est plus retiré de la zone s'il se trouve à plus de 90 % dans le tracé de la zone (`MAX_POLYGON_COVERAGE`) ; supprime l'encoche autour de l'îlot d'arrêt de bus de la zone rouge (CA02). Seuls les giratoires traversés par le tracé sont exclus.
 - **Concordance V2 avec l'étalon Python `snap_cells_prototype_v7.py`** (audit comparatif Java ↔ Python sur Territoire CA01) :
   - `AlgebraicEllipseFitter` : l'orientation `theta` était décalée de π/2 dès que le grand axe était incliné à moins de 45° de l'horizontale (résidus jusqu'à ~70 px sur des ellipses parfaites). Formule corrigée : `phi = 0.5·atan2(2b, a−c) + π/2`, sans correction supplémentaire selon le signe de `a − c`.

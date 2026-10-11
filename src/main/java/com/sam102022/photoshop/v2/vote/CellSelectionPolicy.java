@@ -17,8 +17,11 @@ public record CellSelectionPolicy(
     public static final double DEFAULT_INSIDE_THRESHOLD = 0.60;
     /** Seuil de rejet par défaut (5%). */
     public static final double DEFAULT_PARTIAL_THRESHOLD = 0.05;
-    /** Épaisseur minimale par défaut d'une lamelle partielle conservée (20 px). */
-    public static final double DEFAULT_MIN_PARTIAL_THICKNESS = 25.0;
+    /**
+     * Épaisseur minimale par défaut d'une lamelle partielle conservée (40 px) : un tracé débordant d'une
+     * trentaine de pixels au-delà d'une route frontière ne doit pas emporter la bande de terrain voisine.
+     */
+    public static final double DEFAULT_MIN_PARTIAL_THICKNESS = 40.0;
 
     /**
      * Valide la cohérence des seuils de sélection.
