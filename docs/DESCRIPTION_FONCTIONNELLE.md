@@ -100,15 +100,17 @@ Les autres captures (`01_plan_avec_territoires.png`, `03_style_contraste.png`, `
 * Les ronds-points traversés par le tracé sont inclus en entier.
 
 **Étape 5 — Contour vectoriel.** Le bord du masque est extrait au sub-pixel puis lissé par régression locale robuste, en préservant les angles vifs. Les ronds-points sont remplacés par des arcs d'ellipse raccordés aux routes par des courbes d'Hermite (continuité tangentielle).
-
+    
 **Étape 6 — Calage et redressement.**
 * Le contour est accroché au bord exact des chaussées, lu dans la capture « Routes seules » (désactivable par `--no-road-snap`).
 * Les petites boucles où le contour se recoupe sont supprimées.
 * Les bosses le long des bords rectilignes, au débouché des rues secondaires, sont remplacées par une ligne droite, sauf si cela couperait un rond-point ou un pâté de maisons.
+* Près d'un sommet du tracé, une amorce de rue qui dépasse d'un carrefour à angle franc est coupée à la jonction des deux bords, et l'embouchure d'une rue latérale sur le bord d'une route est remplacée par une ligne droite.
 * Le contour est réduit à des grands segments rectilignes, effet « lasso polygonal » (`--polygon-tolerance`).
 
 **Étape 7 — Rendu.**
 * Le contour est rastérisé sur une grille quatre fois plus fine (`--ss`), ce qui donne à chaque pixel de bord une opacité exacte entre 0 et 255.
+* Là où le tracé fait un zigzag dans un îlot retenu, le contour lissé enjambe le creux et le terrain de l'îlot sous le contour reste visible (pas d'encoche transparente).
 * Autour des ronds-points inclus, les petits coins de terrain blanc restés au-delà de la chaussée sont rendus transparents, et les petites encoches taillées dans l'anneau sont comblées d'après la capture « Routes seules ».
 
 ### 4.2 Zones

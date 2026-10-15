@@ -608,6 +608,13 @@ const MAP_SELECTOR = '#map';
         }
         console.log(`   📂 Dossier cible : ${territoryDir}`);
 
+        // Fin du mode édition du tracé et de l'aperçu du détourage (page maps/google) : les poignées des
+        // sommets et le voile sombre ne doivent pas apparaître sur les captures. Le tracé modifié, même non
+        // enregistré dans le KML, reste celui du territoire et est écrit dans le JSON.
+        await page.evaluate(() => {
+            if (typeof endTraceEditing === 'function') endTraceEditing();
+        });
+
         // --- CAPTURE 1 : Style par défaut ("Plan") + "Afficher territoires" + "Afficher zones" ---
         console.log('   1. Capture : Plan (avec territoires)');
         //await setCheckbox('displayTerritories', true);

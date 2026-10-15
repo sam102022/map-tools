@@ -7,12 +7,15 @@ import com.sam102022.photoshop.v2.cell.CellLabeler;
 import com.sam102022.photoshop.v2.cell.CellLabelingResult;
 import com.sam102022.photoshop.v2.cell.CropWindow;
 import com.sam102022.photoshop.v2.contour.ContourSmoothingEngine;
+import com.sam102022.photoshop.v2.contour.Roundabout;
 import com.sam102022.photoshop.v2.contour.RoundaboutDetector;
 import com.sam102022.photoshop.v2.contour.SmoothVectorContour;
 import com.sam102022.photoshop.v2.edge.EdgeBandGuard;
 import com.sam102022.photoshop.v2.edge.LocalLoopRemover;
 import com.sam102022.photoshop.v2.edge.PolygonalSimplifier;
 import com.sam102022.photoshop.v2.edge.RoadEdgeSnapper;
+import com.sam102022.photoshop.v2.edge.PartialCellGuard;
+import com.sam102022.photoshop.v2.edge.RoadStubCutter;
 import com.sam102022.photoshop.v2.edge.StraightEdgeBumpRemover;
 import com.sam102022.photoshop.v2.expansion.BoulevardPocketFiller;
 import com.sam102022.photoshop.v2.expansion.BoundaryRoundaboutIncluder;
@@ -63,6 +66,8 @@ public class V2Pipeline {
     private final LocalLoopRemover localLoopRemover = new LocalLoopRemover();
     private final StraightEdgeBumpRemover bumpRemover = new StraightEdgeBumpRemover();
     private final RoundaboutDetector roundaboutDetector = new RoundaboutDetector();
+    private final RoadStubCutter stubCutter = new RoadStubCutter();
+    private final PartialCellGuard partialCellGuard = new PartialCellGuard();
     private final RoundaboutSliverCleaner sliverCleaner = new RoundaboutSliverCleaner();
     private final BoulevardPocketFiller boulevardPocketFiller = new BoulevardPocketFiller();
     private final BoundaryRoundaboutIncluder roundaboutIncluder = new BoundaryRoundaboutIncluder();
@@ -305,8 +310,12 @@ public class V2Pipeline {
         smoothContour = roadEdgeSnapper.snap(smoothContour, mapImage, config.toRoadEdgeSnapConfig(), false, googleRoads);
         smoothContour = localLoopRemover.removeLoops(smoothContour, LocalLoopRemover.DEFAULT_MAX_LOOP_POINTS);
         // Bosses aux débouchés de rues le long des bords rectilignes : remplacées par leur corde.
-        smoothContour = bumpRemover.remove(smoothContour, croppedRoad,
-                roundaboutDetector.detect(croppedRoad, labelingResult.labelMap(), labelingResult.cells(), 90.0, 240));
+        List<Roundabout> networkRoundabouts = roundaboutDetector.detect(croppedRoad, labelingResult.labelMap(),
+                labelingResult.cells(), 90.0, 240);
+        smoothContour = bumpRemover.remove(smoothContour, croppedRoad, networkRoundabouts);
+        // Amorces de rues coupées un peu au-delà d'un carrefour, aux sommets du tracé : coupées à la jonction.
+        smoothContour = stubCutter.cut(smoothContour, croppedRoad, networkRoundabouts,
+                toLocal(polygonPoints, cropWindow));
 
         // 5 ter. Réduction en polygone de grands segments rectilignes (détourage « lasso polygonal »)
         smoothContour = polygonalSimplifier.simplify(smoothContour, config.polygonTolerance());
@@ -325,6 +334,9 @@ public class V2Pipeline {
         if (config.roadEdgeSnapEnabled()) {
             refinementMap = edgeBandGuard.protect(refinementMap, smoothContour, EDGE_GUARD_RADIUS);
         }
+        // 6 ter. Terrain des îlots déjà retenus (tracé en zigzag) : gardé sous le contour lissé qui enjambe les creux.
+        refinementMap = partialCellGuard.protect(refinementMap, smoothContour, consolidated.mask(),
+                labelingResult.labelMap());
 
         // 7. Rendu Sub-Pixel Supersampling SS=4 (Sprint 9)
         CoverageMask coverageMask = supersampleRenderer.render(

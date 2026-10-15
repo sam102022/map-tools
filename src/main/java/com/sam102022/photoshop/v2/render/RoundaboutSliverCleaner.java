@@ -22,6 +22,11 @@ import java.util.Objects;
  * (moins de {@value #MAX_NOTCH_AREA} px) taillées dans la chaussée de l'anneau par le raccord du contour sont
  * comblées d'après la capture.
  * </p>
+ * <p>
+ * La capture est crénelée (marches d'escalier d'un pixel) : l'opacité donnée aux pixels corrigés est la couverture
+ * de l'iso-ligne 0,5 de la capture lissée (gaussienne de {@value #SMOOTHING_SIGMA} px), mesurée sur une grille
+ * {@value #SUPERSAMPLING} fois plus fine. Le bord corrigé est ainsi aussi lisse que le reste du contour vectoriel.
+ * </p>
  */
 public final class RoundaboutSliverCleaner {
 
@@ -31,10 +36,20 @@ public final class RoundaboutSliverCleaner {
     public static final int MAX_SLIVER_AREA = 300;
     /** Surface maximale (px) d'une encoche de chaussée comblée. */
     public static final int MAX_NOTCH_AREA = 150;
+    /**
+     * Surface minimale (px) d'une encoche comblée : en deçà, l'écart avec la capture est de l'ordre de son
+     * crénelage, et la combler ferait saillir ses marches sur le bord lisse du contour (les éclats de terrain blanc
+     * sont, eux, toujours retirés).
+     */
+    public static final int MIN_NOTCH_AREA = 12;
     /** Part de chaussée en deçà de laquelle un pixel est du terrain. */
     private static final float LAND_THRESHOLD = 0.5f;
     /** Opacité en deçà de laquelle un pixel est hors du territoire. */
     private static final int VISIBLE_THRESHOLD = 128;
+    /** Écart type (px) du lissage de la capture avant mesure de la couverture. */
+    public static final double SMOOTHING_SIGMA = 1.2;
+    /** Facteur de suréchantillonnage de la mesure de couverture. */
+    public static final int SUPERSAMPLING = 4;
 
     /**
      * Construit un nettoyeur sans état.
@@ -67,16 +82,15 @@ public final class RoundaboutSliverCleaner {
     }
 
     /**
-     * Ramène l'opacité d'un pixel à sa part de chaussée si elle est inférieure.
+     * Ramène l'opacité d'un pixel à sa couverture de chaussée lissée si elle est inférieure.
      *
-     * @param coverage Couverture pleine image (modifiée en place).
-     * @param roads    Capture « Routes seules ».
-     * @param gx       Abscisse globale.
-     * @param gy       Ordonnée globale.
+     * @param coverage  Couverture pleine image (modifiée en place).
+     * @param roadAlpha Couverture de chaussée lissée du pixel (0 à 255).
+     * @param gx        Abscisse globale.
+     * @param gy        Ordonnée globale.
      * @return 1 si l'opacité a été réduite, 0 sinon.
      */
-    private int keepRoadOnly(CoverageMask coverage, GoogleRoadsImage roads, int gx, int gy) {
-        int roadAlpha = Math.round(255.0f * roads.value(gx, gy));
+    private int keepRoadOnly(CoverageMask coverage, int roadAlpha, int gx, int gy) {
         if (roadAlpha >= coverage.get(gx, gy)) {
             return 0;
         }
@@ -114,6 +128,7 @@ public final class RoundaboutSliverCleaner {
                         && roads.value(x0 + x, y0 + y) < LAND_THRESHOLD;
             }
         }
+        int[] smooth = smoothRoadCoverage(roads, x0, y0, w, h, width, height);
         boolean[] visited = new boolean[w * h];
         int[] queue = new int[w * h];
         int removed = 0;
@@ -168,13 +183,124 @@ public final class RoundaboutSliverCleaner {
                         }
                         boolean fringe = coverage.get(x0 + nx, y0 + ny) < VISIBLE_THRESHOLD;
                         if ((dx == 0 && dy == 0) || fringe) {
-                            removed += keepRoadOnly(coverage, roads, x0 + nx, y0 + ny);
+                            removed += keepRoadOnly(coverage, smooth[ny * w + nx], x0 + nx, y0 + ny);
                         }
                     }
                 }
             }
         }
-        return removed + fillNotches(coverage, roads, x0, y0, w, h);
+        return removed + fillNotches(coverage, roads, smooth, x0, y0, w, h);
+    }
+
+    /**
+     * Couverture (0 à 255) de chaque pixel du carré par la chaussée lissée : iso-ligne 0,5 de la capture passée
+     * dans une gaussienne de {@value #SMOOTHING_SIGMA} px, mesurée sur {@value #SUPERSAMPLING} x
+     * {@value #SUPERSAMPLING} échantillons par pixel (interpolation bilinéaire).
+     *
+     * @param roads  Capture « Routes seules ».
+     * @param x0     Abscisse globale du carré.
+     * @param y0     Ordonnée globale du carré.
+     * @param w      Largeur du carré.
+     * @param h      Hauteur du carré.
+     * @param width  Largeur utile de l'image.
+     * @param height Hauteur utile de l'image.
+     * @return Couvertures, ligne par ligne.
+     */
+    private int[] smoothRoadCoverage(GoogleRoadsImage roads, int x0, int y0, int w, int h, int width, int height) {
+        int pad = (int) Math.ceil(3.0 * SMOOTHING_SIGMA) + 1;
+        int pw = w + 2 * pad;
+        int ph = h + 2 * pad;
+        float[] field = new float[pw * ph];
+        for (int y = 0; y < ph; y++) {
+            int gy = Math.max(0, Math.min(height - 1, y0 - pad + y));
+            for (int x = 0; x < pw; x++) {
+                int gx = Math.max(0, Math.min(width - 1, x0 - pad + x));
+                field[y * pw + x] = roads.value(gx, gy);
+            }
+        }
+        float[] smooth = gaussian(field, pw, ph);
+        int[] coverage = new int[w * h];
+        double step = 1.0 / SUPERSAMPLING;
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                int inside = 0;
+                for (int sy = 0; sy < SUPERSAMPLING; sy++) {
+                    for (int sx = 0; sx < SUPERSAMPLING; sx++) {
+                        double fx = pad + x + (sx + 0.5) * step - 0.5;
+                        double fy = pad + y + (sy + 0.5) * step - 0.5;
+                        inside += bilinear(smooth, pw, ph, fx, fy) >= LAND_THRESHOLD ? 1 : 0;
+                    }
+                }
+                coverage[y * w + x] = Math.round(255.0f * inside / (SUPERSAMPLING * SUPERSAMPLING));
+            }
+        }
+        return coverage;
+    }
+
+    /**
+     * Flou gaussien séparable d'écart type {@value #SMOOTHING_SIGMA} px (bords prolongés).
+     *
+     * @param field Valeurs, ligne par ligne.
+     * @param w     Largeur.
+     * @param h     Hauteur.
+     * @return Valeurs lissées.
+     */
+    private static float[] gaussian(float[] field, int w, int h) {
+        int radius = (int) Math.ceil(3.0 * SMOOTHING_SIGMA);
+        float[] kernel = new float[2 * radius + 1];
+        float sum = 0.0f;
+        for (int k = -radius; k <= radius; k++) {
+            kernel[k + radius] = (float) Math.exp(-0.5 * k * k / (SMOOTHING_SIGMA * SMOOTHING_SIGMA));
+            sum += kernel[k + radius];
+        }
+        for (int k = 0; k < kernel.length; k++) {
+            kernel[k] /= sum;
+        }
+        float[] rows = new float[w * h];
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                float acc = 0.0f;
+                for (int k = -radius; k <= radius; k++) {
+                    acc += kernel[k + radius] * field[y * w + Math.max(0, Math.min(w - 1, x + k))];
+                }
+                rows[y * w + x] = acc;
+            }
+        }
+        float[] out = new float[w * h];
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                float acc = 0.0f;
+                for (int k = -radius; k <= radius; k++) {
+                    acc += kernel[k + radius] * rows[Math.max(0, Math.min(h - 1, y + k)) * w + x];
+                }
+                out[y * w + x] = acc;
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Interpolation bilinéaire (coordonnées de centres de pixels, bords prolongés).
+     *
+     * @param field Valeurs, ligne par ligne.
+     * @param w     Largeur.
+     * @param h     Hauteur.
+     * @param x     Abscisse.
+     * @param y     Ordonnée.
+     * @return Valeur interpolée.
+     */
+    private static float bilinear(float[] field, int w, int h, double x, double y) {
+        int ix = (int) Math.floor(x);
+        int iy = (int) Math.floor(y);
+        float tx = (float) (x - ix);
+        float ty = (float) (y - iy);
+        int xa = Math.max(0, Math.min(w - 1, ix));
+        int xb = Math.max(0, Math.min(w - 1, ix + 1));
+        int ya = Math.max(0, Math.min(h - 1, iy));
+        int yb = Math.max(0, Math.min(h - 1, iy + 1));
+        float top = field[ya * w + xa] * (1 - tx) + field[ya * w + xb] * tx;
+        float bottom = field[yb * w + xa] * (1 - tx) + field[yb * w + xb] * tx;
+        return top * (1 - ty) + bottom * ty;
     }
 
     /**
@@ -184,13 +310,15 @@ public final class RoundaboutSliverCleaner {
      *
      * @param coverage Couverture pleine image (modifiée en place).
      * @param roads    Capture « Routes seules ».
+     * @param smooth   Couverture de chaussée lissée du carré (0 à 255).
      * @param x0       Abscisse globale du carré.
      * @param y0       Ordonnée globale du carré.
      * @param w        Largeur du carré.
      * @param h        Hauteur du carré.
      * @return Nombre de pixels rendus (plus) opaques.
      */
-    private int fillNotches(CoverageMask coverage, GoogleRoadsImage roads, int x0, int y0, int w, int h) {
+    private int fillNotches(CoverageMask coverage, GoogleRoadsImage roads, int[] smooth, int x0, int y0, int w,
+                            int h) {
         boolean[] notch = new boolean[w * h];
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
@@ -227,7 +355,7 @@ public final class RoundaboutSliverCleaner {
                     }
                 }
             }
-            if (touchesBorder || tail > MAX_NOTCH_AREA) {
+            if (touchesBorder || tail > MAX_NOTCH_AREA || tail < MIN_NOTCH_AREA) {
                 continue;
             }
             // L'encoche et sa frange anti-crénelée reprennent la part de chaussée de la capture.
@@ -239,7 +367,7 @@ public final class RoundaboutSliverCleaner {
                         int nx = x + dx;
                         int ny = y + dy;
                         if (nx >= 0 && ny >= 0 && nx < w && ny < h) {
-                            filled += raiseToRoad(coverage, roads, x0 + nx, y0 + ny);
+                            filled += raiseToRoad(coverage, smooth[ny * w + nx], x0 + nx, y0 + ny);
                         }
                     }
                 }
@@ -249,16 +377,15 @@ public final class RoundaboutSliverCleaner {
     }
 
     /**
-     * Porte l'opacité d'un pixel à sa part de chaussée si elle est supérieure.
+     * Porte l'opacité d'un pixel à sa couverture de chaussée lissée si elle est supérieure.
      *
-     * @param coverage Couverture pleine image (modifiée en place).
-     * @param roads    Capture « Routes seules ».
-     * @param gx       Abscisse globale.
-     * @param gy       Ordonnée globale.
+     * @param coverage  Couverture pleine image (modifiée en place).
+     * @param roadAlpha Couverture de chaussée lissée du pixel (0 à 255).
+     * @param gx        Abscisse globale.
+     * @param gy        Ordonnée globale.
      * @return 1 si l'opacité a été augmentée, 0 sinon.
      */
-    private int raiseToRoad(CoverageMask coverage, GoogleRoadsImage roads, int gx, int gy) {
-        int roadAlpha = Math.round(255.0f * roads.value(gx, gy));
+    private int raiseToRoad(CoverageMask coverage, int roadAlpha, int gx, int gy) {
         if (roadAlpha <= coverage.get(gx, gy)) {
             return 0;
         }
